@@ -39,10 +39,12 @@ func (p *Parser) parseGlobalTable(sheet *xlsx.Sheet, name, desc string) (*Table,
 			return nil, pkg_errors.WithMessagef(err, "get row[%d]", i+1)
 		}
 
-		rowTag := row.GetCell(globalColFieldTag).Value
+		rowTag := strings.TrimSpace(row.GetCell(globalColFieldTag).Value)
+
 		if !checkTagValid(rowTag) {
 			return nil, fmt.Errorf("row[%d] tag(%s) invalid", i+1, rowTag)
 		}
+
 		if !p.checkTagNeed(rowTag) {
 			continue
 		}
@@ -57,7 +59,7 @@ func (p *Parser) parseGlobalTable(sheet *xlsx.Sheet, name, desc string) (*Table,
 // parseGlobalTableField 解析row定义的字段到global配置表td
 func (p *Parser) parseGlobalTableField(td *Table, row *xlsx.Row) error {
 	fieldName := strings.TrimSpace(row.GetCell(globalColFieldName).Value)
-	if fieldName == "" {
+	if fieldName == "" || isComment(fieldName) {
 		return nil
 	}
 

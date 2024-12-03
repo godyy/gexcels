@@ -86,7 +86,7 @@ func (p *Parser) parseStructOfSheet(sheet *xlsx.Sheet) error {
 		if err != nil {
 			return pkg_errors.WithMessagef(err, "row[%d]", i)
 		}
-		rowTag := row.GetCell(structColTag).Value
+		rowTag := strings.TrimSpace(row.GetCell(structColTag).Value)
 		if !checkTagValid(rowTag) {
 			return fmt.Errorf("row[%d] tag(%s) invalid", i, rowTag)
 		}
@@ -108,13 +108,18 @@ func (p *Parser) parseStructOfSheet(sheet *xlsx.Sheet) error {
 
 // parseStructRow 解析row中定义的结构体
 func (p *Parser) parseStructRow(row *xlsx.Row) (*Struct, error) {
-	sd := &Struct{}
-
-	sd.Name = strings.TrimSpace(row.GetCell(structColName).Value)
-	if !structNameRegexp.MatchString(sd.Name) {
-		return nil, fmt.Errorf("struct name %s invalid", sd.Name)
+	sdName := strings.TrimSpace(row.GetCell(structColName).Value)
+	if sdName == "" || isComment(sdName) {
+		return nil, nil
 	}
-	sd.ExportName = exportStructName(sd.Name)
+	if !structNameRegexp.MatchString(sdName) {
+		return nil, fmt.Errorf("struct name %s invalid", sdName)
+	}
+
+	sd := &Struct{
+		Name:       sdName,
+		ExportName: exportStructName(sdName),
+	}
 
 	if err := p.parseStructFields(sd, strings.TrimSpace(row.GetCell(structColFields).Value)); err != nil {
 		return nil, pkg_errors.WithMessagef(err, "struct %s fields", sd.Name)

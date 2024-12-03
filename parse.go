@@ -338,3 +338,8 @@ func getSheetValue(sheet *xlsx.Sheet, row, col int, trim ...bool) (string, error
 		return cell.Value, nil
 	}
 }
+
+// 是否满足注释格式
+func isComment(s string) bool {
+	return commentRegexp.MatchString(s)
+}

@@ -333,7 +333,7 @@ func (p *Parser) parseTableEntries(td *Table, sheet *xlsx.Sheet) error {
 
 		// ID
 		idValue := strings.TrimSpace(row.GetCell(tableColID).Value)
-		if idValue == "" {
+		if idValue == "" || isComment(idValue) {
 			continue
 		}
 		fd = td.Fields[0]

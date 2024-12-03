@@ -32,4 +32,6 @@ var (
 	structRuleLinkRegexp = regexp.MustCompile(fmt.Sprintf(`^(%s),(%s).(%s)$`, namePattern, namePattern, namePattern))
 
 	tableFieldRuleLinkRegexp = regexp.MustCompile(fmt.Sprintf(`^(%s).(%s)$`, namePattern, namePattern))
+
+	commentRegexp = regexp.MustCompile(`^#[\s\S]*$`)
 )
