@@ -2,6 +2,7 @@ package gexcels
 
 import (
 	"fmt"
+	"strings"
 
 	pkg_errors "github.com/pkg/errors"
 	"github.com/tealeg/xlsx/v3"
@@ -55,7 +56,11 @@ func (p *Parser) parseGlobalTable(sheet *xlsx.Sheet, name, desc string) (*Table,
 
 // parseGlobalTableField 解析row定义的字段到global配置表td
 func (p *Parser) parseGlobalTableField(td *Table, row *xlsx.Row) error {
-	fieldName := row.GetCell(globalColFieldName).Value
+	fieldName := strings.TrimSpace(row.GetCell(globalColFieldName).Value)
+	if fieldName == "" {
+		return nil
+	}
+
 	if !fieldNameRegexp.MatchString(fieldName) {
 		return errFieldNameInvalid(fieldName)
 	}

@@ -212,14 +212,14 @@ func (p *Parser) parseTableFields(td *Table, sheet *xlsx.Sheet) error {
 
 	for i := 0; i < sheet.MaxCol; i++ {
 		if i > 0 {
-			tagCell, err := sheet.Cell(tableRowFieldTag, i)
+			tag, err := getSheetValue(sheet, tableRowFieldTag, i, true)
 			if err != nil {
 				return pkg_errors.WithMessagef(err, "get coll[%d] tag cell", i)
 			}
-			if !checkTagValid(tagCell.Value) {
-				return fmt.Errorf("col[%d] tag(%s) invalid", i, tagCell.Value)
+			if !checkTagValid(tag) {
+				return fmt.Errorf("col[%d] tag(%s) invalid", i, tag)
 			}
-			if !p.checkTagNeed(tagCell.Value) {
+			if !p.checkTagNeed(tag) {
 				continue
 			}
 		}
@@ -235,42 +235,41 @@ func (p *Parser) parseTableFields(td *Table, sheet *xlsx.Sheet) error {
 
 // parseTableField 解析sheet中col列定义的字段到td指定的配置表中
 func (p *Parser) parseTableField(td *Table, sheet *xlsx.Sheet, col int) (*TableField, error) {
-	var (
-		cell *xlsx.Cell
-		err  error
-	)
-
-	cell, err = sheet.Cell(tableRowFieldName, col)
+	fieldName, err := getSheetValue(sheet, tableRowFieldName, col, true)
 	if err != nil {
 		return nil, pkg_errors.WithMessage(err, "get name cell")
 	}
-	fieldName := strings.TrimSpace(cell.Value)
+	if fieldName == "" {
+		return nil, nil
+	}
 	if !fieldNameRegexp.MatchString(fieldName) {
 		return nil, errFieldNameInvalid(fieldName)
 	}
-
 	if td.hasField(fieldName) {
 		return nil, errFieldNameDuplicate(fieldName)
 	}
 
-	cell, err = sheet.Cell(tableRowFieldDesc, col)
+	fieldDesc, err := getSheetValue(sheet, tableRowFieldDesc, col)
 	if err != nil {
 		return nil, pkg_errors.WithMessage(err, "get desc cell")
 	}
 
-	fd := &TableField{
-		Field: newField(fieldName, cell.Value),
-		Col:   col,
-	}
-
-	cell, err = sheet.Cell(tableRowFieldType, col)
+	fieldType, err := getSheetValue(sheet, tableRowFieldType, col, true)
 	if err != nil {
 		return nil, pkg_errors.WithMessage(err, "get type cell")
 	}
-	fieldType := strings.TrimSpace(cell.Value)
+	if fieldType == "" {
+		return nil, nil
+	}
 	if !fieldTypeRegexp.MatchString(fieldType) {
 		return nil, errFieldTypeInvalid(fieldType)
 	}
+
+	fd := &TableField{
+		Field: newField(fieldName, fieldDesc),
+		Col:   col,
+	}
+
 	if err := p.parseFieldType(fd.Field, fieldType); err != nil {
 		return nil, pkg_errors.WithMessagef(err, "field type (%s)", fieldType)
 	}
@@ -288,11 +287,11 @@ func (p *Parser) parseTableField(td *Table, sheet *xlsx.Sheet, col int) (*TableF
 	td.addField(fd)
 
 	if col != 0 {
-		cell, err = sheet.Cell(tableRowFieldRule, col)
+		fieldRule, err := getSheetValue(sheet, tableRowFieldRule, col, true)
 		if err != nil {
 			return nil, pkg_errors.WithMessage(err, "get rule cell")
 		}
-		if err = p.parseTableFieldRules(td, fd, strings.TrimSpace(cell.Value)); err != nil {
+		if err = p.parseTableFieldRules(td, fd, fieldRule); err != nil {
 			return nil, err
 		}
 		if fd.Type == FTStruct || (fd.Type == FTArray && fd.ElementType == FTStruct) {
@@ -333,16 +332,20 @@ func (p *Parser) parseTableEntries(td *Table, sheet *xlsx.Sheet) error {
 		entry := make(TableEntry, len(td.Fields))
 
 		// ID
+		idValue := strings.TrimSpace(row.GetCell(tableColID).Value)
+		if idValue == "" {
+			continue
+		}
 		fd = td.Fields[0]
-		id, err = p.parseFieldValue(fd.Field, row.GetCell(tableColID).Value)
+		id, err = p.parseFieldValue(fd.Field, idValue)
 		if err != nil {
-			return pkg_errors.WithMessagef(err, "row[%d] parse ID=%s", i+1, row.GetCell(tableColID).Value)
+			return pkg_errors.WithMessagef(err, "row[%d] parse ID=%s", i+1, idValue)
 		}
 		if id == nil {
 			return fmt.Errorf("row[%d] ID empty", i+1)
 		}
 		if td.hasEntry(id) {
-			return fmt.Errorf("row[%d] ID=%s duplicate", i+1, row.GetCell(tableColID).Value)
+			return fmt.Errorf("row[%d] ID=%s duplicate", i+1, idValue)
 		}
 		entry[fd.Name] = id
 

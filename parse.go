@@ -117,6 +117,19 @@ func newParser(path string, options *ParseOptions) *Parser {
 	return p
 }
 
+// 检查Tag是否满足need
+func (p *Parser) checkTagNeed(tag string) bool {
+	if len(p.options.Tag) <= 0 {
+		return true
+	}
+	for _, v := range p.options.Tag {
+		if strings.Contains(tag, v) {
+			return true
+		}
+	}
+	return false
+}
+
 // parsePrimitiveValue 解析primitive字段值
 func parsePrimitiveValue(ft FieldType, s string) (interface{}, error) {
 	switch ft {
@@ -312,15 +325,16 @@ func checkTagValid(tag string) bool {
 	return tag == "" || tagRegexp.MatchString(tag)
 }
 
-// 检查Tag是否满足need
-func (p *Parser) checkTagNeed(tag string) bool {
-	if len(p.options.Tag) <= 0 {
-		return true
+// 获取sheet中的value
+func getSheetValue(sheet *xlsx.Sheet, row, col int, trim ...bool) (string, error) {
+	cell, err := sheet.Cell(row, col)
+	if err != nil {
+		return "", err
 	}
-	for _, v := range p.options.Tag {
-		if strings.Contains(tag, v) {
-			return true
-		}
+
+	if len(trim) > 0 && trim[0] {
+		return strings.TrimSpace(cell.Value), nil
+	} else {
+		return cell.Value, nil
 	}
-	return false
 }
