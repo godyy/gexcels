@@ -78,7 +78,7 @@ func (p *Parser) getFieldReflectType(fd *Field) (reflect.Type, error) {
 			if sd == nil {
 				return nil, fmt.Errorf("array element struct %s not define", fd.StructName)
 			}
-			return sd.ReflectType, nil
+			elementType = reflect.PointerTo(sd.ReflectType)
 		} else {
 			panic(errArrayElementInvalid(fd.Type))
 		}
