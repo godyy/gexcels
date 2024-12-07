@@ -35,31 +35,6 @@ func newField(name, desc string) *Field {
 	}
 }
 
-func (f *Field) addRule(r rule) bool {
-	if f.rules == nil {
-		f.rules = make(map[string]rule)
-	}
-
-	if _, ok := f.rules[r.ruleType()]; ok {
-		return false
-	} else {
-		f.rules[r.ruleType()] = r
-		return true
-	}
-}
-
-func (f *Field) getRule(ruleType string) rule {
-	if len(f.rules) <= 0 {
-		return nil
-	}
-
-	return f.rules[ruleType]
-}
-
-func (f *Field) Unique() bool {
-	return f.getRule(fieldRuleUnique) != nil
-}
-
 func (p *Parser) getFieldReflectType(fd *Field) (reflect.Type, error) {
 	if fd.Type.Primitive() {
 		return ConvertPrimitiveType2ReflectType(fd.Type), nil

@@ -67,7 +67,7 @@ var templateGoNormalTableFile = template.Must(template.New("go_table_file").
 // {{.Table.ExportTableStructName}} {{.Table.Desc}}
 type {{.Table.ExportTableStructName}} struct {
 	entries []*{{.Table.ExportEntryStructName}}
-	{{$hasUnique := 0}}{{range $index, $item := .Table.Fields}}{{if $item.Unique}}{{if $hasUnique}}{{"\n"}}{{end}}{{$hasUnique = true}}by{{$item.ExportName}} map[{{genPrimitiveFieldType $item.Type}}]*{{$.Table.ExportEntryStructName}}{{end}}{{end}}
+	{{$hasUnique := 0}}{{range $index, $item := .Table.Fields}}{{if $item.ExportUniqueMethod}}{{if $hasUnique}}{{"\n"}}{{end}}{{$hasUnique = true}}by{{$item.ExportName}} map[{{genPrimitiveFieldType $item.Type}}]*{{$.Table.ExportEntryStructName}}{{end}}{{end}}
 }
 
 func (t *{{.Table.ExportTableStructName}}) name() string {
@@ -76,7 +76,7 @@ func (t *{{.Table.ExportTableStructName}}) name() string {
 
 func (t *{{.Table.ExportTableStructName}}) List() []*{{.Table.ExportEntryStructName}} { return t.entries }
 
-{{$hasUnique := 0}}{{range $index, $item := .Table.Fields}}{{if $item.Unique}}{{if $hasUnique}}{{"\n\n"}}{{end}}{{$hasUnique = true}}func (t *{{$.Table.ExportTableStructName}}) GetBy{{$item.ExportName}}({{if eq $index 0}}id{{else}}v{{end}} {{genPrimitiveFieldType $item.Type}}) *{{$.Table.ExportEntryStructName}} {
+{{$hasUnique := 0}}{{range $index, $item := .Table.Fields}}{{if $item.ExportUniqueMethod}}{{if $hasUnique}}{{"\n\n"}}{{end}}{{$hasUnique = true}}func (t *{{$.Table.ExportTableStructName}}) GetBy{{$item.ExportName}}({{if eq $index 0}}id{{else}}v{{end}} {{genPrimitiveFieldType $item.Type}}) *{{$.Table.ExportEntryStructName}} {
 	return t.by{{$item.ExportName}}[{{if eq $index 0}}id{{else}}v{{end}}]
 }{{end}}{{end}}
 `))
@@ -257,30 +257,17 @@ var templateGoNormalTableLoadJson = template.Must(template.New("go_normal_table_
 	if err := loadHelper.unmarshal(data, &t.entries); err != nil {
 		return err
 	}
-	{{$hasUnique := false}}
-	{{range $index,$item := .Table.Fields}}{{if $item.Unique}}{{if $hasUnique}}{{"\n"}}{{end}}{{$hasUnique = true}}t.by{{$item.ExportName}} = make(map[{{genPrimitiveFieldType $item.Type}}]*{{$.Table.ExportEntryStructName}}, len(t.entries)){{end}}{{end}}
+	{{$hasUnique := false -}}
+	{{- range $index,$item := .Table.Fields}}{{if $item.ExportUniqueMethod}}{{if $hasUnique}}{{"\n"}}{{end}}{{$hasUnique = true}}t.by{{$item.ExportName}} = make(map[{{genPrimitiveFieldType $item.Type}}]*{{$.Table.ExportEntryStructName}}, len(t.entries)){{end}}{{end}}
 	for _, e := range t.entries {
-		{{$hasUnique := false}}
-		{{range $index, $item := .Table.Fields}}{{if $item.Unique}}{{if $hasUnique}}{{"\n"}}{{end}}{{$hasUnique = true}}t.by{{$item.ExportName}}[e.{{$item.ExportName}}] = e{{end}}{{end}}
+		{{$hasUnique := false -}}
+		{{- range $index, $item := .Table.Fields}}{{if $item.ExportUniqueMethod}}{{if $hasUnique}}{{"\n"}}{{end}}{{$hasUnique = true}}t.by{{$item.ExportName}}[e.{{$item.ExportName}}] = e{{end}}{{end}}
 	}
 	return nil
 }`))
 
 // genGoNormalTableLoadJson 生成go常规配置表json加载代码
 func genGoNormalTableLoadJson(td *Table) string {
-	uniqueFields := make([]struct {
-		FieldName string
-		FieldType string
-	}, 0)
-	for i := 1; i < len(td.Fields); i++ {
-		fd := td.Fields[i]
-		if fd.Unique() {
-			uniqueFields = append(uniqueFields, struct {
-				FieldName string
-				FieldType string
-			}{FieldName: fd.ExportName, FieldType: genGoPrimitiveType(fd.Type)})
-		}
-	}
 	var sb strings.Builder
 	if err := templateGoNormalTableLoadJson.Execute(&sb, map[string]interface{}{
 		"Table": td,
@@ -354,11 +341,11 @@ var templateGoNormalLoadBytes = template.Must(template.New("go_normal_table_load
 	if err := loadHelper.loadEntries(data, reflect.ValueOf(&t.entries).Elem()); err != nil {
 		return err
 	}
-	{{$hasUnique := false}}
-	{{range $index,$item := .Table.Fields}}{{if $item.Unique}}{{if $hasUnique}}{{"\n"}}{{end}}{{$hasUnique = true}}t.by{{$item.ExportName}} = make(map[{{genPrimitiveFieldType $item.Type}}]*{{$.Table.ExportEntryStructName}}, len(t.entries)){{end}}{{end}}
+	{{$hasUnique := false -}}
+	{{- range $index,$item := .Table.Fields}}{{if $item.ExportUniqueMethod}}{{if $hasUnique}}{{"\n"}}{{end}}{{$hasUnique = true}}t.by{{$item.ExportName}} = make(map[{{genPrimitiveFieldType $item.Type}}]*{{$.Table.ExportEntryStructName}}, len(t.entries)){{end}}{{end}}
 	for _, e := range t.entries {
-		{{$hasUnique := false}}
-		{{range $index, $item := .Table.Fields}}{{if $item.Unique}}{{if $hasUnique}}{{"\n"}}{{end}}{{$hasUnique = true}}t.by{{$item.ExportName}}[e.{{$item.ExportName}}] = e{{end}}{{end}}
+		{{$hasUnique := false -}}
+		{{- range $index, $item := .Table.Fields}}{{if $item.ExportUniqueMethod}}{{if $hasUnique}}{{"\n"}}{{end}}{{$hasUnique = true}}t.by{{$item.ExportName}}[e.{{$item.ExportName}}] = e{{end}}{{end}}
 	}
 	return nil
 }`))

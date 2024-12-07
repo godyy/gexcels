@@ -14,7 +14,9 @@ type rule interface {
 }
 
 // RuleUnique 唯一规则，表示该字段的值在配置表返回内具有唯一性
-type RuleUnique struct{}
+type RuleUnique struct {
+	ExportMethod bool
+}
 
 func (r *RuleUnique) ruleType() string { return fieldRuleUnique }
 
@@ -33,4 +35,44 @@ func checkFieldLinkType(srcField, dstField *Field) bool {
 		srcFieldType = srcField.ElementType
 	}
 	return srcFieldType == dstField.Type
+}
+
+func convertRule[Rule rule](r rule) (rr Rule) {
+	if r == nil {
+		return
+	}
+	if v, ok := r.(Rule); ok {
+		rr = v
+	}
+	return
+}
+
+func (f *Field) addRule(r rule) bool {
+	if f.rules == nil {
+		f.rules = make(map[string]rule)
+	}
+
+	if _, ok := f.rules[r.ruleType()]; ok {
+		return false
+	} else {
+		f.rules[r.ruleType()] = r
+		return true
+	}
+}
+
+func (f *Field) getRule(ruleType string) rule {
+	if len(f.rules) <= 0 {
+		return nil
+	}
+
+	return f.rules[ruleType]
+}
+
+func (f *Field) Unique() bool {
+	return convertRule[*RuleUnique](f.getRule(fieldRuleUnique)) != nil
+}
+
+func (f *Field) ExportUniqueMethod() bool {
+	ruleUnique := convertRule[*RuleUnique](f.getRule(fieldRuleUnique))
+	return ruleUnique != nil && ruleUnique.ExportMethod
 }
