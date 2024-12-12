@@ -2,6 +2,7 @@ package gexcels
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	pkg_errors "github.com/pkg/errors"
@@ -30,11 +31,57 @@ type TableField struct {
 	Col    int // 非Global配置时有效
 }
 
-// TableLink 配置表链接规则
+// TableLink 配置表链接
 type TableLink struct {
 	SrcField []string // 源字段，可以指向结构体内部字段
 	DstTable string   // 目标配置表
 	DstField string   // 目标字段，ID或者unique
+}
+
+func newTableLink(srcField []string, dstTable, dstField string) *TableLink {
+	return &TableLink{
+		SrcField: srcField,
+		DstTable: dstTable,
+		DstField: dstField,
+	}
+}
+
+// TableCompositeKey 配置表组合键
+type TableCompositeKey struct {
+	KeyName        string         // key名
+	Key2FieldIndex map[int]string // index映射 [keyIndex]fieldName
+	KeyIndexes     []int          // 键索引
+}
+
+func newTableCompositeKey(keyName string) *TableCompositeKey {
+	return &TableCompositeKey{
+		KeyName:        keyName,
+		Key2FieldIndex: make(map[int]string),
+	}
+}
+
+func (tck *TableCompositeKey) addIndex(key int, fieldName string) bool {
+	if _, ok := tck.Key2FieldIndex[key]; ok {
+		return false
+	} else {
+		tck.Key2FieldIndex[key] = fieldName
+		return true
+	}
+}
+
+func (tck *TableCompositeKey) SortedFields() []string {
+	if len(tck.KeyIndexes) == 0 {
+		tck.KeyIndexes = make([]int, 0, len(tck.Key2FieldIndex))
+		for i := range tck.Key2FieldIndex {
+			tck.KeyIndexes = append(tck.KeyIndexes, i)
+		}
+		sort.Ints(tck.KeyIndexes)
+	}
+	fields := make([]string, len(tck.KeyIndexes))
+	for i, v := range tck.KeyIndexes {
+		fields[i] = tck.Key2FieldIndex[v]
+	}
+	return fields
 }
 
 // TableEntry 配置条目数据
@@ -42,20 +89,21 @@ type TableEntry map[string]interface{}
 
 // Table 配置表定义
 type Table struct {
-	Name                  string                          // 表名
-	Desc                  string                          // 描述
-	IsGlobal              bool                            // 是否全局配置表
-	Fields                []*TableField                   // 字段
-	FieldByName           map[string]int                  // 字段名映射
-	Entries               []TableEntry                    // for normal
-	EntryByID             map[interface{}]TableEntry      // for normal
-	EntryByName           map[string]interface{}          // for global
-	UniqueValues          map[string]map[interface{}]bool // [fieldName][fieldValue]
-	ExportEntryStructName string                          // 导出结构体名
-	ExportTableStructName string                          // 导出表结构名
-	ExportTableName       string                          // 导出的表名
+	Name                  string                     // 表名
+	Desc                  string                     // 描述
+	IsGlobal              bool                       // 是否全局配置表
+	Fields                []*TableField              // 字段
+	FieldByName           map[string]int             // 字段名映射
+	Entries               []TableEntry               // for normal
+	EntryByID             map[interface{}]TableEntry // for normal
+	EntryByName           map[string]interface{}     // for global
+	UniqueValues          map[string]map[string]bool // [fieldName][fieldValue]
+	ExportEntryStructName string                     // 导出结构体名
+	ExportTableStructName string                     // 导出表结构名
+	ExportTableName       string                     // 导出的表名
 
-	links []*TableLink // 外链规则
+	Links         []*TableLink         // 外链规则
+	CompositeKeys []*TableCompositeKey // 组合键
 }
 
 func newTable(name, desc string, isGlobal bool) *Table {
@@ -82,7 +130,7 @@ func (td *Table) addField(fd *TableField) {
 	td.FieldByName[fd.Name] = len(td.Fields) - 1
 }
 
-func (td *Table) getFieldByName(name string) *TableField {
+func (td *Table) GetFieldByName(name string) *TableField {
 	if i, ok := td.FieldByName[name]; ok {
 		return td.Fields[i]
 	} else {
@@ -117,24 +165,28 @@ func (td *Table) getEntryByName(name string) interface{} {
 }
 
 func (td *Table) addUniqueValue(fieldName string, value interface{}) bool {
+	s := convertUniqueValue2String(value)
+
 	if td.UniqueValues == nil {
-		td.UniqueValues = make(map[string]map[interface{}]bool)
+		td.UniqueValues = make(map[string]map[string]bool)
 	}
 
 	if values := td.UniqueValues[fieldName]; values == nil {
-		values = make(map[interface{}]bool)
+		values = make(map[string]bool)
 		td.UniqueValues[fieldName] = values
-		values[value] = true
+		values[s] = true
 		return true
-	} else if ok := values[value]; ok {
+	} else if ok := values[s]; ok {
 		return false
 	} else {
-		values[value] = true
+		values[s] = true
 		return true
 	}
 }
 
 func (td *Table) hasUniqueValue(fieldName string, value interface{}) bool {
+	s := convertUniqueValue2String(value)
+
 	if td.UniqueValues == nil {
 		return false
 	}
@@ -144,11 +196,27 @@ func (td *Table) hasUniqueValue(fieldName string, value interface{}) bool {
 		return false
 	}
 
-	return values[value]
+	return values[s]
 }
 
 func (td *Table) addLink(rule ...*TableLink) {
-	td.links = append(td.links, rule...)
+	td.Links = append(td.Links, rule...)
+}
+
+func (td *Table) addCompositeKey(keyName string, keyIndex int, fieldName string) bool {
+	var ck *TableCompositeKey
+	if n := sort.Search(len(td.CompositeKeys), func(i int) bool {
+		return keyName <= td.CompositeKeys[i].KeyName
+	}); n < len(td.CompositeKeys) && keyName == td.CompositeKeys[n].KeyName {
+		ck = td.CompositeKeys[n]
+	} else {
+		ck = newTableCompositeKey(keyName)
+		td.CompositeKeys = append(td.CompositeKeys, nil)
+		copy(td.CompositeKeys[n+1:], td.CompositeKeys[n:])
+		td.CompositeKeys[n] = ck
+	}
+
+	return ck.addIndex(keyIndex, fieldName)
 }
 
 func (p *Parser) addTable(td *Table) {
@@ -275,7 +343,7 @@ func (p *Parser) parseTableField(td *Table, sheet *xlsx.Sheet, col int) (*TableF
 
 	if col == 0 {
 		if fd.Name != idExportName {
-			return nil, errFirstFieldMustId
+			return nil, errFirstFieldMustID
 		}
 		if !fd.Type.Primitive() {
 			return nil, errIDNonPrimitive

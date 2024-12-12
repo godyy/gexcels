@@ -33,5 +33,7 @@ var (
 
 	tableFieldRuleLinkRegexp = regexp.MustCompile(fmt.Sprintf(`^(%s).(%s)$`, namePattern, namePattern))
 
+	tableFieldRuleCompositeKey = regexp.MustCompile(fmt.Sprintf(`^(\w+),([0-9])$`))
+
 	commentRegexp = regexp.MustCompile(`^#[\s\S]*$`)
 )

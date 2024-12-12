@@ -1,6 +1,8 @@
 package gexcels
 
 import (
+	"reflect"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -54,4 +56,39 @@ func toLowerSnake(s string) string {
 
 func titleName(s string) string {
 	return strings.Title(s)
+}
+
+func convertUniqueValue2String(v interface{}) string {
+	switch o := v.(type) {
+	case string:
+		return o
+	//case int:
+	//	return strconv.FormatInt(int64(o), 10)
+	//case int8:
+	//	return strconv.FormatInt(int64(o), 10)
+	//case int16:
+	//	return strconv.FormatInt(int64(o), 10)
+	case int32:
+		return strconv.FormatInt(int64(o), 10)
+	case int64:
+		return strconv.FormatInt(o, 10)
+	//case uint:
+	//	return strconv.FormatUint(uint64(o), 10)
+	//case uint8:
+	//	return strconv.FormatUint(uint64(o), 10)
+	//case uint16:
+	//	return strconv.FormatUint(uint64(o), 10)
+	//case uint32:
+	//	return strconv.FormatUint(uint64(o), 10)
+	//case uint64:
+	//	return strconv.FormatUint(o, 10)
+	case float32:
+		return strconv.FormatFloat(float64(o), 'f', -1, 32)
+	case float64:
+		return strconv.FormatFloat(o, 'f', -1, 32)
+	case bool:
+		return strconv.FormatBool(o)
+	default:
+		panic("invalid unique value type " + reflect.TypeOf(v).String())
+	}
 }

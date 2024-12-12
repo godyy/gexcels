@@ -54,11 +54,163 @@ func genGoTableStruct(td *Table, dataKind DataKind) string {
 	return sb.String()
 }
 
+// go配置表组合键字段名模版
+var templateGoTableCompositeKeyFieldName = template.Must(template.New("go_table_composite_key_field_name").
+	Parse(`{{range $index, $fieldName := .Fields}}{{$field := $.Table.GetFieldByName $fieldName}}{{$field.ExportName}}{{end}}`))
+
+// 生成go配置表组合键字段名
+func genGoTableCompositeKeyFieldName(td *Table, fields []string) string {
+	var sb strings.Builder
+	if err := templateGoTableCompositeKeyFieldName.Execute(&sb, map[string]interface{}{
+		"Table":  td,
+		"Fields": fields,
+	}); err != nil {
+		panic(err)
+	}
+	return sb.String()
+}
+
+// go配置表组合键字段类型模版
+var templateGoCompositeKeyTableFieldType = template.Must(template.New("go_table_composite_key_field_type").
+	Funcs(template.FuncMap{
+		"genPrimitiveFieldType": genGoPrimitiveType,
+	}).
+	Parse(`{{range $index, $fieldName := .Fields}}{{$field := $.Table.GetFieldByName $fieldName}}map[{{genPrimitiveFieldType $field.Type}}]{{end}}*{{$.Table.ExportEntryStructName}}`))
+
+// 生成go配置表组合键字段类型
+func genGoTableCompositeKeyFieldType(td *Table, fields []string) string {
+	var sb strings.Builder
+	if err := templateGoCompositeKeyTableFieldType.Execute(&sb, map[string]interface{}{
+		"Table":  td,
+		"Fields": fields,
+	}); err != nil {
+		panic(err)
+	}
+	return sb.String()
+}
+
+var templateGoTableCompositeKeyMethod = template.Must(template.New("go_table_composite_key_method").
+	Funcs(template.FuncMap{
+		"genCompositeKeyFieldName": genGoTableCompositeKeyFieldName,
+		"genPrimitiveFieldType":    genGoPrimitiveType,
+		"sub":                      func(a, b int) int { return a - b },
+	}).
+	Parse(`{{- $fields := .CompositeKey.SortedFields -}}
+{{- $ckFieldName := genCompositeKeyFieldName .Table $fields -}}
+// GetBy{{$ckFieldName}} composite-key {{.CompositeKey.KeyName}}
+func (t *{{$.Table.ExportTableStructName}}) GetBy{{$ckFieldName}}(
+{{- range $index, $fieldName := $fields}}{{if $index}}{{", "}}{{end}}{{$fieldName}}{{$field := $.Table.GetFieldByName $fieldName}} {{genPrimitiveFieldType $field.Type}}{{end -}}
+) *{{$.Table.ExportEntryStructName}} {
+	{{$up := printf "t.by%s" $ckFieldName -}}
+	{{- $cur := "" -}}
+	{{- $lastField := "" -}}
+	{{- range $index, $fieldName := $fields -}}
+	{{- $lastField = $fieldName -}}
+	{{- $field := $.Table.GetFieldByName $fieldName -}}
+	{{- $cur = printf "by%s" $field.ExportName -}}
+	{{- if lt $index (sub (len $fields) 1)}}if {{$cur}} := {{$up}}[{{$fieldName}}]; {{$cur}} == nil {
+		{{$up = $cur -}}
+		return nil
+	}{{else}} else {
+		return {{$up}}[{{$lastField}}]
+	}{{end -}}
+	{{- end}}
+}`))
+
+func genGoTableCompositeKeyMethod(td *Table, ck *TableCompositeKey) string {
+	var sb strings.Builder
+	if err := templateGoTableCompositeKeyMethod.Execute(&sb, map[string]interface{}{
+		"Table":        td,
+		"CompositeKey": ck,
+	}); err != nil {
+		panic(err)
+	}
+	return sb.String()
+}
+
+var templateGoTableCompositeKeyFieldInit = template.Must(template.New("go_table_composite_key_field_init").
+	Funcs(template.FuncMap{
+		"genCompositeKeyFieldName": genGoTableCompositeKeyFieldName,
+		"genCompositeKeyFieldType": genGoTableCompositeKeyFieldType,
+		"add":                      func(a, b int) int { return a + b },
+		"sub":                      func(a, b int) int { return a - b },
+	}).
+	Parse(`{// composite-key {{.Name}}
+	{{$lastIndex := sub (len .Fields) 1 -}}
+	{{- $up := printf "t.by%s" (genCompositeKeyFieldName .Table .Fields) -}}
+	{{- $cur := "" -}}
+	{{- range $index, $fieldName := .Fields -}}
+	{{- if eq $index $lastIndex}}{{break}}{{end -}}
+	{{- $field := $.Table.GetFieldByName $fieldName -}}
+	{{- $cur = printf "by%s" $field.ExportName -}}
+	{{- $cur}} := {{$up}}[e.{{$field.ExportName}}]
+	if {{$cur}} == nil {
+		{{$cur}} = make({{genCompositeKeyFieldType $.Table (slice $.Fields (add $index 1))}})
+	}
+	{{- $up = $cur -}}
+	{{- end}}
+	{{$lastField := .Table.GetFieldByName (index .Fields $lastIndex)}}{{$cur}}[e.{{$lastField.ExportName}}] = e
+	}`))
+
+func genGoTableCompositeKeyFieldInit(td *Table, ck *TableCompositeKey) string {
+	var sb strings.Builder
+	if err := templateGoTableCompositeKeyFieldInit.Execute(&sb, map[string]interface{}{
+		"Table":  td,
+		"Name":   ck.KeyName,
+		"Fields": ck.SortedFields(),
+	}); err != nil {
+		panic(err)
+	}
+	return sb.String()
+}
+
+var templateGoTableCompositeKeyFieldInitMethod = template.Must(template.New("go_table_composite_key_field_init_method").
+	Funcs(template.FuncMap{
+		"genCompositeKeyFieldName": genGoTableCompositeKeyFieldName,
+		"genCompositeKeyFieldType": genGoTableCompositeKeyFieldType,
+		"add":                      func(a, b int) int { return a + b },
+		"sub":                      func(a, b int) int { return a - b },
+	}).Parse(`// composite-key {{.CompositeKey.KeyName}}
+	{{$fields := .CompositeKey.SortedFields -}}
+func (t *{{.Table.ExportTableStructName}}) initBy{{genCompositeKeyFieldName .Table $fields}}(e *{{.Table.ExportEntryStructName}}) {
+	{{$lastIndex := sub (len $fields) 1 -}}
+	{{- $up := printf "t.by%s" (genCompositeKeyFieldName .Table $fields) -}}
+	{{- $cur := "" -}}
+	{{- range $index, $fieldName := $fields -}}
+	{{- if eq $index $lastIndex}}{{break}}{{end -}}
+	{{- $field := $.Table.GetFieldByName $fieldName -}}
+	{{- $cur = printf "by%s" $field.ExportName -}}
+	{{- $cur}} := {{$up}}[e.{{$field.ExportName}}]
+	if {{$cur}} == nil {
+		{{$cur}} = make({{genCompositeKeyFieldType $.Table (slice $fields (add $index 1))}})
+	}
+	{{- $up = $cur -}}
+	{{- end}}
+	{{$lastField := .Table.GetFieldByName (index $fields $lastIndex)}}{{$cur}}[e.{{$lastField.ExportName}}] = e
+}
+`))
+
+func genGoTableCompositeKeyFieldInitMethod(td *Table, ck *TableCompositeKey) string {
+	var sb strings.Builder
+	if err := templateGoTableCompositeKeyFieldInitMethod.Execute(&sb, map[string]interface{}{
+		"Table":        td,
+		"CompositeKey": ck,
+	}); err != nil {
+		panic(err)
+	}
+	return sb.String()
+}
+
 // templateGoNormalTableFile go常规配置表文件模版
 var templateGoNormalTableFile = template.Must(template.New("go_table_file").
 	Funcs(template.FuncMap{
-		"genEntryStruct":        genGoTableStruct,
-		"genPrimitiveFieldType": genGoPrimitiveType,
+		"genEntryStruct":                 genGoTableStruct,
+		"genPrimitiveFieldType":          genGoPrimitiveType,
+		"genCompositeKeyFieldName":       genGoTableCompositeKeyFieldName,
+		"genCompositeKeyFieldType":       genGoTableCompositeKeyFieldType,
+		"genCompositeKeyMethod":          genGoTableCompositeKeyMethod,
+		"genCompositeKeyFieldInitMethod": genGoTableCompositeKeyFieldInitMethod,
+		"toCamelCase":                    toCamelCase,
 	}).
 	Parse(`package {{.PkgName}}
 
@@ -66,19 +218,54 @@ var templateGoNormalTableFile = template.Must(template.New("go_table_file").
 
 // {{.Table.ExportTableStructName}} {{.Table.Desc}}
 type {{.Table.ExportTableStructName}} struct {
-	entries []*{{.Table.ExportEntryStructName}}
-	{{$hasUnique := 0}}{{range $index, $item := .Table.Fields}}{{if $item.ExportUniqueMethod}}{{if $hasUnique}}{{"\n"}}{{end}}{{$hasUnique = true}}by{{$item.ExportName}} map[{{genPrimitiveFieldType $item.Type}}]*{{$.Table.ExportEntryStructName}}{{end}}{{end}}
+	entries []*{{.Table.ExportEntryStructName}} // data entries
+	{{$hasUnique := 0}}{{range $index, $item := .Table.Fields}}{{if $item.ExportUniqueMethod}}{{if $hasUnique}}{{"\n"}}{{end}}{{$hasUnique = true}}by{{$item.ExportName}} map[{{genPrimitiveFieldType $item.Type}}]*{{$.Table.ExportEntryStructName}} // mapping by {{$item.ExportName}}{{end}}{{end}}
+	{{- range $index, $ck := .Table.CompositeKeys -}}
+		{{"\n"}}by{{genCompositeKeyFieldName $.Table $ck.SortedFields}} {{genCompositeKeyFieldType $.Table $ck.SortedFields}} // composite-key {{$ck.KeyName}}
+	{{- end}}
 }
+
+func (t *{{.Table.ExportTableStructName}}) List() []*{{.Table.ExportEntryStructName}} { return t.entries }
+
+{{$hasUnique := 0 -}}
+{{- range $index, $item := .Table.Fields -}}
+{{- if $item.ExportUniqueMethod}}
+{{- if $hasUnique}}{{"\n\n"}}{{end -}}
+{{- $hasUnique = true}}
+// GetBy{{$item.ExportName}} mapping by {{$item.ExportName}}
+func (t *{{$.Table.ExportTableStructName}}) GetBy{{$item.ExportName}}({{if eq $index 0}}id{{else}}v{{end}} {{genPrimitiveFieldType $item.Type}}) *{{$.Table.ExportEntryStructName}} {
+	return t.by{{$item.ExportName}}[{{if eq $index 0}}id{{else}}v{{end}}]
+}
+{{end -}}
+{{- end -}}
+
+{{range $index, $ck := .Table.CompositeKeys}}{{if $index}}{{"\n\n"}}{{end}}{{genCompositeKeyMethod $.Table $ck}}{{end}}
 
 func (t *{{.Table.ExportTableStructName}}) name() string {
 	return "{{.Table.ExportTableName}}"
 }
 
-func (t *{{.Table.ExportTableStructName}}) List() []*{{.Table.ExportEntryStructName}} { return t.entries }
+func (t *{{.Table.ExportTableStructName}}) init() {
+	{{$hasUnique := false -}}
+	{{- range $index,$item := .Table.Fields}}{{if $item.ExportUniqueMethod}}{{if $hasUnique}}{{"\n"}}{{end}}{{$hasUnique = true}}t.by{{$item.ExportName}} = make(map[{{genPrimitiveFieldType $item.Type}}]*{{$.Table.ExportEntryStructName}}, len(t.entries)){{end}}{{end}}
+	for _, e := range t.entries {
+		{{$hasUnique := false -}}
+		{{- range $index, $item := .Table.Fields}}{{if $item.ExportUniqueMethod}}{{if $hasUnique}}{{"\n"}}{{end}}{{$hasUnique = true}}t.by{{$item.ExportName}}[e.{{$item.ExportName}}] = e{{end}}{{end}}
+		{{range $index, $ck := .Table.CompositeKeys}}{{if $index}}{{"\n"}}{{end}}t.initBy{{genCompositeKeyFieldName $.Table $ck.SortedFields}}(e){{end}}
+	}	
+}
 
-{{$hasUnique := 0}}{{range $index, $item := .Table.Fields}}{{if $item.ExportUniqueMethod}}{{if $hasUnique}}{{"\n\n"}}{{end}}{{$hasUnique = true}}func (t *{{$.Table.ExportTableStructName}}) GetBy{{$item.ExportName}}({{if eq $index 0}}id{{else}}v{{end}} {{genPrimitiveFieldType $item.Type}}) *{{$.Table.ExportEntryStructName}} {
-	return t.by{{$item.ExportName}}[{{if eq $index 0}}id{{else}}v{{end}}]
-}{{end}}{{end}}
+{{range $index, $ck := .Table.CompositeKeys}}{{if $index}}{{"\n\n"}}{{end}}{{genCompositeKeyFieldInitMethod $.Table $ck}}{{end}}
+
+func new{{.Table.ExportTableStructName}}() *{{.Table.ExportTableStructName}} {
+	return &{{.Table.ExportTableStructName}} {
+		{{$hasUnique := 0}}{{range $index, $item := .Table.Fields}}{{if $item.ExportUniqueMethod}}{{if $hasUnique}}{{"\n"}}{{end}}{{$hasUnique = true}}by{{$item.ExportName}}: map[{{genPrimitiveFieldType $item.Type}}]*{{$.Table.ExportEntryStructName}}{},{{end}}{{end}}
+		{{range $index, $ck := .Table.CompositeKeys -}}
+		{{- if $index}}{{"\n"}}{{end -}}
+		by{{genCompositeKeyFieldName $.Table $ck.SortedFields}}: {{genCompositeKeyFieldType $.Table $ck.SortedFields}}{},
+		{{- end}}
+	}
+}
 `))
 
 // genGoNormalTableFile 生成go常规配置表代码文本
@@ -104,6 +291,10 @@ var templateGoGlobalTableFile = template.Must(template.New("go_global_table_file
 // {{.Table.ExportTableStructName}} {{.Table.Desc}}
 type {{.Table.ExportTableStructName}} struct {
 	{{range $index, $item := .Table.Fields}}{{if $index}}{{"\n"}}{{end}}{{genStructField $item.Field $.DataKind}}{{end}}
+}
+
+func new{{.Table.ExportTableStructName}}() *{{.Table.ExportTableStructName}} {
+	return &{{.Table.ExportTableStructName}}{}
 }
 
 func (t *{{.Table.ExportTableStructName}}) name() string {
@@ -169,7 +360,7 @@ func NewTableManager() *TableManager {
 }
 
 func (tm *TableManager) initTables() {
-	{{range $index, $item := .Tables}}{{if $index}}{{"\n"}}{{end}}tm.{{$fieldName := toFieldName $item.Name}}{{$fieldName}} = new({{$item.ExportTableStructName}})
+	{{range $index, $item := .Tables}}{{if $index}}{{"\n"}}{{end}}tm.{{$fieldName := toFieldName $item.Name}}{{$fieldName}} = new{{$item.ExportTableStructName}}()
 	tm.addTable(tm.{{$fieldName}}){{end}}
 }
 
@@ -251,18 +442,14 @@ func genGoTableMgrFile(tables []*Table, pkgName string, dataKind DataKind) strin
 // templateGoNormalTableLoadJson go常规配置表json加载模版
 var templateGoNormalTableLoadJson = template.Must(template.New("go_normal_table_load_json").
 	Funcs(template.FuncMap{
-		"genPrimitiveFieldType": genGoPrimitiveType,
+		"genPrimitiveFieldType":    genGoPrimitiveType,
+		"genCompositeKeyFieldInit": genGoTableCompositeKeyFieldInit,
 	}).
 	Parse(`func (t *{{.Table.ExportTableStructName}}) loadData(data []byte) error {
 	if err := loadHelper.unmarshal(data, &t.entries); err != nil {
 		return err
 	}
-	{{$hasUnique := false -}}
-	{{- range $index,$item := .Table.Fields}}{{if $item.ExportUniqueMethod}}{{if $hasUnique}}{{"\n"}}{{end}}{{$hasUnique = true}}t.by{{$item.ExportName}} = make(map[{{genPrimitiveFieldType $item.Type}}]*{{$.Table.ExportEntryStructName}}, len(t.entries)){{end}}{{end}}
-	for _, e := range t.entries {
-		{{$hasUnique := false -}}
-		{{- range $index, $item := .Table.Fields}}{{if $item.ExportUniqueMethod}}{{if $hasUnique}}{{"\n"}}{{end}}{{$hasUnique = true}}t.by{{$item.ExportName}}[e.{{$item.ExportName}}] = e{{end}}{{end}}
-	}
+	t.init()
 	return nil
 }`))
 
@@ -341,12 +528,7 @@ var templateGoNormalLoadBytes = template.Must(template.New("go_normal_table_load
 	if err := loadHelper.loadEntries(data, reflect.ValueOf(&t.entries).Elem()); err != nil {
 		return err
 	}
-	{{$hasUnique := false -}}
-	{{- range $index,$item := .Table.Fields}}{{if $item.ExportUniqueMethod}}{{if $hasUnique}}{{"\n"}}{{end}}{{$hasUnique = true}}t.by{{$item.ExportName}} = make(map[{{genPrimitiveFieldType $item.Type}}]*{{$.Table.ExportEntryStructName}}, len(t.entries)){{end}}{{end}}
-	for _, e := range t.entries {
-		{{$hasUnique := false -}}
-		{{- range $index, $item := .Table.Fields}}{{if $item.ExportUniqueMethod}}{{if $hasUnique}}{{"\n"}}{{end}}{{$hasUnique = true}}t.by{{$item.ExportName}}[e.{{$item.ExportName}}] = e{{end}}{{end}}
-	}
+	t.init()
 	return nil
 }`))
 

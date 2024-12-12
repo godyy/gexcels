@@ -31,6 +31,13 @@ func (p *Parser) parseTableFieldRules(td *Table, fd *TableField, s string) error
 			if err := p.parseTableFieldRuleLink(td, fd, matches[2]); err != nil {
 				return err
 			}
+		case fieldRuleCompositeKey:
+			if td.IsGlobal {
+				return errRuleCompositeKeyOnGlobalTable
+			}
+			if err := p.parseTableFieldRuleCompositeKey(td, fd, matches[2]); err != nil {
+				return err
+			}
 		default:
 			return errRuleTypeInvalid(matches[1])
 		}
@@ -76,11 +83,32 @@ func (p *Parser) parseTableFieldRuleLink(td *Table, fd *TableField, value string
 		return errRuleMultiple(fieldRuleLink)
 	}
 
-	td.addLink(&TableLink{
-		SrcField: []string{fd.Name},
-		DstTable: ss[1],
-		DstField: ss[2],
-	})
+	td.addLink(newTableLink([]string{fd.Name}, ss[1], ss[2]))
+
+	return nil
+}
+
+func (p *Parser) parseTableFieldRuleCompositeKey(td *Table, fd *TableField, value string) error {
+	if !fd.Type.Primitive() {
+		return errRuleCompositeKeyOnNonPrimitiveField
+	}
+
+	ss := tableFieldRuleCompositeKey.FindStringSubmatch(value)
+	if len(ss) != 3 {
+		return fmt.Errorf("composite-key value \"%s\" invalid", value)
+	}
+
+	keyName := ss[1]
+	keyIndex, _ := strconv.Atoi(ss[2])
+
+	rule := convertRule[*RuleCompositeKey](getCreateFieldRule(fd.Field, fieldRuleCompositeKey))
+	if !rule.addKeyIndex(keyName, keyIndex) {
+		return fmt.Errorf("composite-key %s keyIndex %d duplicate on field", keyName, keyIndex)
+	}
+
+	if !td.addCompositeKey(keyName, keyIndex, fd.Name) {
+		return fmt.Errorf("composite-key %s keyIndex %d duplicate", keyName, keyIndex)
+	}
 
 	return nil
 }
@@ -92,12 +120,7 @@ func (p *Parser) getFieldTableLinks(fd *Field, fieldPath *[]string, links *[]*Ta
 			srcField := make([]string, len(*fieldPath)+1)
 			copy(srcField, *fieldPath)
 			srcField[len(srcField)-1] = fd.Name
-			link := &TableLink{
-				SrcField: srcField,
-				DstTable: ruleLink.DstTable,
-				DstField: ruleLink.DstField,
-			}
-			*links = append(*links, link)
+			*links = append(*links, newTableLink(srcField, ruleLink.DstTable, ruleLink.DstField))
 		}
 	} else if fd.Type == FTStruct || fd.ElementType == FTStruct {
 		sd := p.getStruct(fd.StructName)
@@ -115,7 +138,7 @@ func (p *Parser) getFieldTableLinks(fd *Field, fieldPath *[]string, links *[]*Ta
 
 // checkTableLinks 检查配置表td外链的其它配置表
 func (p *Parser) checkTableLinks(td *Table) (errs []error) {
-	for _, link := range td.links {
+	for _, link := range td.Links {
 		if err := p.checkTableLinkTable(td, link); err != nil {
 			errs = append(errs, err...)
 		}
@@ -136,7 +159,7 @@ func (p *Parser) checkTableLinkTable(td *Table, link *TableLink) (errs []error) 
 		return []error{makeErrTableLinkByTableLink(td.Name, link, "dst table not found")}
 	}
 
-	if srcTableField := srcTable.getFieldByName(link.SrcField[0]); srcTableField == nil {
+	if srcTableField := srcTable.GetFieldByName(link.SrcField[0]); srcTableField == nil {
 		return []error{makeErrTableLinkByTableLink(td.Name, link, "src field not found")}
 	} else {
 		srcField = srcTableField.Field
@@ -150,7 +173,7 @@ func (p *Parser) checkTableLinkTable(td *Table, link *TableLink) (errs []error) 
 			return []error{makeErrTableLinkByTableLink(td.Name, link, "src field type not primitive")}
 		}
 	}
-	if dstTableField := dstTable.getFieldByName(link.DstField); dstTableField == nil {
+	if dstTableField := dstTable.GetFieldByName(link.DstField); dstTableField == nil {
 		return []error{makeErrTableLinkByTableLink(td.Name, link, "dst field not found")}
 	} else if !dstTableField.ExportUniqueMethod() {
 		return []error{makeErrTableLinkByTableLink(td.Name, link, "dst field not Unique or not export method")}

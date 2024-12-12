@@ -83,7 +83,7 @@ func Parse(path string, options ...*ParseOptions) (*Parser, error) {
 		for _, err := range errs {
 			errorln(err)
 		}
-		return nil, errLinkErrorFound
+		return nil, errLinkErrorsFound
 	}
 
 	return p, nil

@@ -176,7 +176,7 @@ func (p *Parser) parseStructFields(sd *Struct, fields string) error {
 // parseStructField 解析结构体字段
 func (p *Parser) parseStructField(def []string) (*Field, error) {
 	if len(def) != 3 {
-		return nil, errFieldDefineInvalid
+		return nil, errStructFieldDefineInvalid
 	}
 
 	fd := newField(def[0], def[2])

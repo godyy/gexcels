@@ -66,10 +66,6 @@ func (p *Parser) getFieldReflectType(fd *Field) (reflect.Type, error) {
 func (p *Parser) parseFieldType(fd *Field, typeStr string) error {
 	typeStr = strings.TrimSpace(typeStr)
 
-	if typeStr == "" {
-		return errFieldTypeEmpty
-	}
-
 	isArray := strings.HasPrefix(typeStr, "[]")
 	if isArray {
 		typeStr = typeStr[2:]
