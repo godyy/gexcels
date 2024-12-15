@@ -1,24 +1,14 @@
-package gexcels
+package parse
 
 import (
 	"encoding/json"
 	"fmt"
-	"reflect"
-	"strings"
-
 	pkg_errors "github.com/pkg/errors"
 	"github.com/tealeg/xlsx/v3"
-)
-
-const (
-	structColTag    = 0                 // tag列
-	structColName   = 1                 // 名称列
-	structColFields = 2                 // 字段列
-	structColRule   = 3                 // 规则列
-	structColDesc   = 4                 // 描述
-	structTableCols = structColDesc + 1 // 列数量
-
-	structSkipRows = 1
+	"reflect"
+	"sort"
+	"strconv"
+	"strings"
 )
 
 // Struct 结构体
@@ -31,6 +21,14 @@ type Struct struct {
 	ExportName  string         // 导出名
 }
 
+func newStruct(name, desc string) *Struct {
+	return &Struct{
+		Name: name,
+		Desc: desc,
+	}
+}
+
+// getFieldByName 根据名称获取字段
 func (sd *Struct) getFieldByName(name string) *Field {
 	if i, ok := sd.FieldByName[name]; ok {
 		return sd.Fields[i]
@@ -39,38 +37,81 @@ func (sd *Struct) getFieldByName(name string) *Field {
 	}
 }
 
+// 结构体表各列定义
+const (
+	structColTag    = 0                 // tag列
+	structColName   = 1                 // 名称列
+	structColFields = 2                 // 字段列
+	structColRule   = 3                 // 规则列
+	structColDesc   = 4                 // 描述
+	structTableCols = structColDesc + 1 // 列数量
+
+)
+
+// 读取结构体定义时的跳过行数
+const structSkipRows = 1
+
+// addStruct 添加结构体
 func (p *Parser) addStruct(sd *Struct) {
-	p.structs = append(p.structs, sd)
-	p.structByName[sd.Name] = len(p.structs) - 1
+	p.Structs = append(p.Structs, sd)
+	p.structByName[sd.Name] = sd
 }
 
-func (p *Parser) getStruct(name string) *Struct {
-	if i, ok := p.structByName[name]; ok {
-		return p.structs[i]
-	} else {
-		return nil
-	}
-}
-
+// hasStruct 是否存在结构体
 func (p *Parser) hasStruct(name string) bool {
 	_, ok := p.structByName[name]
 	return ok
 }
 
-// parseStructs 解析结构体定义
-func (p *Parser) parseStructs() error {
-	if p.structFilePath == "" {
-		return nil
-	}
+// GetStructByName 根据名称获取结构体
+func (p *Parser) GetStructByName(name string) *Struct {
+	return p.structByName[name]
+}
 
-	file, err := xlsx.OpenFile(p.structFilePath)
+// parseStructs 解析结构体定义
+func (p *Parser) parseStructs(files []*structFileInfo) error {
+	for _, file := range files {
+		if err := p.parseStructFile(file); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// structSheetInfo 结构体sheet信息
+type structSheetInfo struct {
+	*xlsx.Sheet     // sheet
+	priority    int // 优先级
+}
+
+// parseStructFile 解析结构体定义文件
+func (p *Parser) parseStructFile(info *structFileInfo) error {
+	file, err := xlsx.OpenFile(info.path)
 	if err != nil {
 		return err
 	}
 
+	sheets := make([]*structSheetInfo, 0, len(file.Sheets))
 	for _, sheet := range file.Sheets {
-		if err := p.parseStructOfSheet(sheet); err != nil {
-			return pkg_errors.WithMessagef(err, "struct file(%s).sheet(%s)", p.structFilePath, sheet.Name)
+		matches := structSheetNameRegexp.FindStringSubmatch(sheet.Name)
+		if len(matches) != 4 {
+			continue
+		}
+
+		priority, _ := strconv.Atoi(matches[3])
+		sheets = append(sheets, &structSheetInfo{
+			Sheet:    sheet,
+			priority: priority,
+		})
+	}
+
+	sort.SliceStable(sheets, func(i, j int) bool {
+		return sheets[i].priority < sheets[j].priority
+	})
+
+	for _, sheet := range sheets {
+		if err := p.parseStructOfSheet(sheet.Sheet); err != nil {
+			return pkg_errors.WithMessagef(err, "struct file(%s).sheet(%s)", info.path, sheet.Name)
 		}
 	}
 	return nil
@@ -86,13 +127,18 @@ func (p *Parser) parseStructOfSheet(sheet *xlsx.Sheet) error {
 		if err != nil {
 			return pkg_errors.WithMessagef(err, "row[%d]", i)
 		}
-		rowTag := strings.TrimSpace(row.GetCell(structColTag).Value)
-		if !checkTagValid(rowTag) {
-			return fmt.Errorf("row[%d] tag(%s) invalid", i, rowTag)
-		}
-		if !p.checkTagNeed(rowTag) {
+
+		if isRowComment(row) {
 			continue
 		}
+
+		rowTag := strings.TrimSpace(row.GetCell(structColTag).Value)
+		if ok, valid := p.checkTag(rowTag); !valid {
+			return fmt.Errorf("row[%d] tag(%s) invalid", i, rowTag)
+		} else if !ok {
+			continue
+		}
+
 		sd, err := p.parseStructRow(row)
 		if err != nil {
 			return pkg_errors.WithMessagef(err, "row[%d] %s", i, row.GetCell(structColName).Value)
@@ -109,27 +155,23 @@ func (p *Parser) parseStructOfSheet(sheet *xlsx.Sheet) error {
 // parseStructRow 解析row中定义的结构体
 func (p *Parser) parseStructRow(row *xlsx.Row) (*Struct, error) {
 	sdName := strings.TrimSpace(row.GetCell(structColName).Value)
-	if sdName == "" || isComment(sdName) {
+	if sdName == "" {
 		return nil, nil
 	}
 	if !structNameRegexp.MatchString(sdName) {
 		return nil, fmt.Errorf("struct name %s invalid", sdName)
 	}
 
-	sd := &Struct{
-		Name:       sdName,
-		ExportName: exportStructName(sdName),
-	}
+	sdDesc := row.GetCell(structColDesc).Value
+	sd := newStruct(sdName, sdDesc)
 
 	if err := p.parseStructFields(sd, strings.TrimSpace(row.GetCell(structColFields).Value)); err != nil {
-		return nil, pkg_errors.WithMessagef(err, "struct %s fields", sd.Name)
+		return nil, pkg_errors.WithMessagef(err, " struct %s fields", sd.Name)
 	}
 
 	if err := p.parseStructRule(sd, row.GetCell(structColRule).Value); err != nil {
 		return nil, err
 	}
-
-	sd.Desc = row.GetCell(structColDesc).Value
 
 	reflectStructFields := make([]reflect.StructField, len(sd.Fields))
 	for i, fd := range sd.Fields {
@@ -138,9 +180,9 @@ func (p *Parser) parseStructRow(row *xlsx.Row) (*Struct, error) {
 			return nil, nil
 		}
 		reflectStructFields[i] = reflect.StructField{
-			Name: fd.ExportName,
+			Name: GenStructFieldName(fd.Name),
 			Type: fdReflectType,
-			Tag:  reflect.StructTag(genGoStructFieldJsonTag(fd.Name)),
+			Tag:  reflect.StructTag(genStructFieldJsonTag(fd)),
 		}
 	}
 	sd.ReflectType = reflect.StructOf(reflectStructFields)
@@ -164,7 +206,7 @@ func (p *Parser) parseStructFields(sd *Struct, fields string) error {
 	for i, field := range matchFields {
 		fieldDef, err := p.parseStructField(field[1:])
 		if err != nil {
-			return pkg_errors.WithMessagef(err, "field[%s]", field[0])
+			return pkg_errors.WithMessagef(err, " field[%s]", field[0])
 		}
 		sd.Fields = append(sd.Fields, fieldDef)
 		sd.FieldByName[fieldDef.Name] = i
@@ -193,7 +235,7 @@ func (p *Parser) parseStructFieldValue(fd *Field, s string) (interface{}, error)
 		return nil, nil
 	}
 
-	sd := p.getStruct(fd.StructName)
+	sd := p.GetStructByName(fd.StructName)
 	if sd == nil {
 		return nil, errStructNotDefine(fd.StructName)
 	}
@@ -204,4 +246,9 @@ func (p *Parser) parseStructFieldValue(fd *Field, s string) (interface{}, error)
 	}
 
 	return val, nil
+}
+
+// genStructFieldJsonTag 生成结构体字段的json tag
+func genStructFieldJsonTag(fd *Field) string {
+	return "`json:\"" + fd.Name + ",omitempty\"`"
 }
