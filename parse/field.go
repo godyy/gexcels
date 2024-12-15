@@ -1,12 +1,11 @@
-package gexcels
+package parse
 
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/godyy/gutils/buffer/bytes"
 	"reflect"
 	"strings"
-
-	"github.com/godyy/gutils/buffer/bytes"
 )
 
 const (
@@ -21,25 +20,42 @@ type Field struct {
 	Type        FieldType // 类型
 	ElementType FieldType // 元素类型
 	StructName  string    // 结构体名称
-	Struct      *Struct   // 结构体定义
-	ExportName  string    // 导出名
 
-	rules map[string]rule // 规则, 各类型至多一个
+	rules map[fieldRuleType]fieldRule // 规则, 各类型至多一个
 }
 
 func newField(name, desc string) *Field {
 	return &Field{
-		Name:       name,
-		Desc:       desc,
-		ExportName: exportFieldName(name),
+		Name: name,
+		Desc: desc,
 	}
 }
 
+// TypeString 生成字段类型字符串
+func (f *Field) TypeString() string {
+	if f.Type.Primitive() {
+		return f.Type.String()
+	} else if f.Type == FTStruct {
+		return f.StructName
+	} else if f.Type == FTArray {
+		if f.ElementType.Primitive() {
+			return "[]" + f.ElementType.String()
+		} else if f.ElementType == FTStruct {
+			return "[]" + f.StructName
+		} else {
+			panic(errArrayElementInvalid(f.Type))
+		}
+	} else {
+		panic(errFieldTypeInvalid(f.Type))
+	}
+}
+
+// getFieldReflectType 获取字段的反射类型
 func (p *Parser) getFieldReflectType(fd *Field) (reflect.Type, error) {
 	if fd.Type.Primitive() {
-		return ConvertPrimitiveType2ReflectType(fd.Type), nil
+		return fd.Type.ToReflectType(), nil
 	} else if fd.Type == FTStruct {
-		sd := p.getStruct(fd.StructName)
+		sd := p.GetStructByName(fd.StructName)
 		if sd == nil {
 			return nil, errStructNotDefine(fd.StructName)
 		}
@@ -47,9 +63,9 @@ func (p *Parser) getFieldReflectType(fd *Field) (reflect.Type, error) {
 	} else if fd.Type == FTArray {
 		var elementType reflect.Type
 		if fd.ElementType.Primitive() {
-			elementType = ConvertPrimitiveType2ReflectType(fd.Type)
+			elementType = fd.Type.ToReflectType()
 		} else if fd.ElementType == FTStruct {
-			sd := p.getStruct(fd.StructName)
+			sd := p.GetStructByName(fd.StructName)
 			if sd == nil {
 				return nil, fmt.Errorf("array element struct %s not define", fd.StructName)
 			}
@@ -63,6 +79,7 @@ func (p *Parser) getFieldReflectType(fd *Field) (reflect.Type, error) {
 	}
 }
 
+// parseFieldType 解析字段的类型字符串
 func (p *Parser) parseFieldType(fd *Field, typeStr string) error {
 	typeStr = strings.TrimSpace(typeStr)
 
@@ -71,7 +88,8 @@ func (p *Parser) parseFieldType(fd *Field, typeStr string) error {
 		typeStr = typeStr[2:]
 	}
 
-	if ft := ConvertPrimitiveFieldString2Type(typeStr); ft != FTUnknown {
+	var ft FieldType
+	if ft.FromPrimitiveString(typeStr) {
 		if isArray {
 			fd.Type = FTArray
 			fd.ElementType = ft
@@ -79,7 +97,7 @@ func (p *Parser) parseFieldType(fd *Field, typeStr string) error {
 			fd.Type = ft
 		}
 	} else {
-		sd := p.getStruct(typeStr)
+		sd := p.GetStructByName(typeStr)
 		if sd == nil {
 			return errStructNotDefine(typeStr)
 		}
@@ -90,12 +108,12 @@ func (p *Parser) parseFieldType(fd *Field, typeStr string) error {
 			fd.Type = FTStruct
 		}
 		fd.StructName = typeStr
-		fd.Struct = sd
 	}
 
 	return nil
 }
 
+// parseFieldValue 解析字段值
 func (p *Parser) parseFieldValue(fd *Field, s string) (interface{}, error) {
 	s = strings.TrimSpace(s)
 
@@ -112,6 +130,7 @@ func (p *Parser) parseFieldValue(fd *Field, s string) (interface{}, error) {
 	}
 }
 
+// parseArrayFieldValue 解析数组字段值
 func (p *Parser) parseArrayFieldValue(fd *Field, s string) (interface{}, error) {
 	if s == "" {
 		return nil, nil
@@ -127,7 +146,7 @@ func (p *Parser) parseArrayFieldValue(fd *Field, s string) (interface{}, error) 
 		}
 		return array, nil
 	} else if fd.ElementType == FTStruct {
-		sd := p.getStruct(fd.StructName)
+		sd := p.GetStructByName(fd.StructName)
 		if sd == nil {
 			return nil, errStructNotDefine(fd.StructName)
 		}
@@ -145,13 +164,14 @@ func (p *Parser) parseArrayFieldValue(fd *Field, s string) (interface{}, error) 
 	}
 }
 
+// getNestedField 获取嵌套的字段
 func (p *Parser) getNestedField(fd *Field, fieldPath []string, depth int) *Field {
 	if depth >= len(fieldPath) {
 		return fd
 	}
 
 	if fd.Type == FTStruct || (fd.Type == FTArray && fd.ElementType == FTStruct) {
-		sd := p.getStruct(fd.StructName)
+		sd := p.GetStructByName(fd.StructName)
 		nestedFd := sd.getFieldByName(fieldPath[depth])
 		if nestedFd == nil {
 			return nil

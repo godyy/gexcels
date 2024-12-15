@@ -1,11 +1,10 @@
-package gexcels
+package parse
 
 import (
 	"fmt"
-	"strings"
-
 	pkg_errors "github.com/pkg/errors"
 	"github.com/tealeg/xlsx/v3"
+	"strings"
 )
 
 const (
@@ -13,25 +12,25 @@ const (
 	globalTableCols = 5 // global配置表列数
 
 	// global 配置表列号
-	globalColFieldTag   = 0
-	globalColFieldName  = 1
-	globalColFieldType  = 2
-	globalColFieldValue = 3
-	globalColFieldRule  = 4
-	globalColFieldDesc  = 5
+	globalColFieldTag   = 0 // Tag
+	globalColFieldName  = 1 // 字段名
+	globalColFieldType  = 2 // 字段类型
+	globalColFieldValue = 3 // 字段值
+	globalColFieldRule  = 4 // 字段规则
+	globalColFieldDesc  = 5 // 字段描述
 )
 
 // parseGlobalTable 解析sheet中的global配置表到td
-func (p *Parser) parseGlobalTable(sheet *xlsx.Sheet, name, desc string) (*Table, error) {
+func (p *Parser) parseGlobalTable(sheet *xlsx.Sheet, tag Tag, name, desc string) (*Table, error) {
 	if sheet.MaxRow < globalSkipRows || sheet.MaxCol < globalTableCols {
 		return nil, errSheetRowsOrColsNotMatch
 	}
 
-	td := newTable(name, desc, true)
+	td := newTable(tag, name, desc, true)
 	fieldCount := sheet.MaxRow - globalSkipRows
 	td.Fields = make([]*TableField, 0, fieldCount)
-	td.FieldByName = make(map[string]int, fieldCount)
-	td.EntryByName = make(map[string]interface{}, fieldCount)
+	td.fieldByName = make(map[string]int, fieldCount)
+	td.entryByName = make(map[string]interface{}, fieldCount)
 
 	for i := globalSkipRows; i < sheet.MaxRow; i++ {
 		row, err := sheet.Row(i)
@@ -39,13 +38,14 @@ func (p *Parser) parseGlobalTable(sheet *xlsx.Sheet, name, desc string) (*Table,
 			return nil, pkg_errors.WithMessagef(err, "get row[%d]", i+1)
 		}
 
-		rowTag := strings.TrimSpace(row.GetCell(globalColFieldTag).Value)
-
-		if !checkTagValid(rowTag) {
-			return nil, fmt.Errorf("row[%d] tag(%s) invalid", i+1, rowTag)
+		if isRowComment(row) {
+			continue
 		}
 
-		if !p.checkTagNeed(rowTag) {
+		rowTag := strings.TrimSpace(row.GetCell(globalColFieldTag).Value)
+		if ok, valid := p.checkTag(rowTag); !valid {
+			return nil, fmt.Errorf("row[%d] tag(%s) invalid", i+1, rowTag)
+		} else if !ok {
 			continue
 		}
 
@@ -59,7 +59,7 @@ func (p *Parser) parseGlobalTable(sheet *xlsx.Sheet, name, desc string) (*Table,
 // parseGlobalTableField 解析row定义的字段到global配置表td
 func (p *Parser) parseGlobalTableField(td *Table, row *xlsx.Row) error {
 	fieldName := strings.TrimSpace(row.GetCell(globalColFieldName).Value)
-	if fieldName == "" || isComment(fieldName) {
+	if fieldName == "" {
 		return nil
 	}
 

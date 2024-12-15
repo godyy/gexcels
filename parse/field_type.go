@@ -1,4 +1,4 @@
-package gexcels
+package parse
 
 import "reflect"
 
@@ -41,38 +41,21 @@ func (ft FieldType) Primitive() bool {
 
 // primitive字段类型字符串到值映射
 var primitiveFieldString2Types = map[string]FieldType{
-	"int32":   FTInt32,
-	"int64":   FTInt64,
-	"float32": FTFloat32,
-	"float64": FTFloat64,
-	"bool":    FTBool,
-	"string":  FTString,
+	FTInt32.String():   FTInt32,
+	FTInt64.String():   FTInt64,
+	FTFloat32.String(): FTFloat32,
+	FTFloat64.String(): FTFloat64,
+	FTBool.String():    FTBool,
+	FTString.String():  FTString,
 }
 
-// ConvertPrimitiveFieldString2Type
-// 将primitive字段类型字符串转换为值，若无效返回FTUnknown
-func ConvertPrimitiveFieldString2Type(s string) FieldType {
-	if ft, ok := primitiveFieldString2Types[s]; ok {
-		return ft
-	} else {
-		return FTUnknown
+// FromPrimitiveString 从Primitive字段类型字符串转换为值，若无效返回false
+func (ft *FieldType) FromPrimitiveString(s string) bool {
+	t, ok := primitiveFieldString2Types[s]
+	if ok {
+		*ft = t
 	}
-}
-
-// primitive字段类型值到字符串映射
-var primitiveFieldType2Strings = [...]string{
-	FTInt32:   "int32",
-	FTInt64:   "int64",
-	FTFloat32: "float32",
-	FTFloat64: "float64",
-	FTBool:    "bool",
-	FTString:  "string",
-}
-
-// ConvertPrimitiveFieldType2String
-// 将primitive字段类型值转换为字符串
-func ConvertPrimitiveFieldType2String(ft FieldType) string {
-	return primitiveFieldType2Strings[ft]
+	return ok
 }
 
 // primitive字段类型值到反射类型
@@ -85,8 +68,10 @@ var primitiveFieldType2ReflectType = [...]reflect.Type{
 	FTString:  reflect.TypeOf(""),
 }
 
-// ConvertPrimitiveType2ReflectType
-// 将primitive字段类型值转换为reflect.Type
-func ConvertPrimitiveType2ReflectType(ft FieldType) reflect.Type {
-	return primitiveFieldType2ReflectType[ft]
+// ToReflectType 转换为reflect.Type，若无效返回nil
+func (ft *FieldType) ToReflectType() reflect.Type {
+	if ft.Primitive() {
+		return primitiveFieldType2ReflectType[*ft]
+	}
+	return nil
 }
