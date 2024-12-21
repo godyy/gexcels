@@ -98,7 +98,7 @@ func NewTable(tag Tag, name, desc string, isGlobal bool) *Table {
 		Desc:     desc,
 		IsGlobal: isGlobal,
 	}
-	if isGlobal && strings.HasPrefix(name, GlobalTableNamePrefix) {
+	if isGlobal && !strings.HasPrefix(name, GlobalTableNamePrefix) {
 		table.Name = GlobalTableNamePrefix + name
 	}
 	return table

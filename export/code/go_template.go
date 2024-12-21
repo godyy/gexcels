@@ -453,6 +453,7 @@ package {{.PkgName}}
 import (
 	"errors"
 	"fmt"
+	"github.com/godyy/gexcels"
 	pkg_errors "github.com/pkg/errors"
 	"io/fs"
 	"os"
@@ -463,39 +464,19 @@ import (
 	"unsafe"
 )
 
-// tagPattern 标签模式
-const tagPattern = ` + "`\\w*`" + `
-
-// tagRegexp 标签正则表达式
-var tagRegexp = regexp.MustCompile(tagPattern)
-
-// Tag 标签
-type Tag string
-
-// TagEmpty 空标签
-const TagEmpty = Tag("")
-
-// TagAny 任意标签
-const TagAny = Tag("*")
-
-// Valid 验证标签是否有效
-func (t Tag) Valid() bool {
-	return tagRegexp.MatchString(string(t))
-}
-
 // tagMap 标签映射
-type tagMap map[Tag]bool
+type tagMap map[gexcels.Tag]bool
 
 // match 匹配标签
-func (tm *tagMap) match(tag Tag) bool {
-	if (*tm)[TagAny] {
+func (tm *tagMap) match(tag gexcels.Tag) bool {
+	if (*tm)[gexcels.TagAny] {
 		return true
 	}
 	return (*tm)[tag]
 }
 
 // createTagMap 创建标签映射
-func createTagMap(tags []Tag) (tagMap, error) {
+func createTagMap(tags []gexcels.Tag) (tagMap, error) {
 	tm := make(tagMap, len(tags))
 	for _, tag := range tags {
 		if !tag.Valid() {
@@ -504,24 +485,24 @@ func createTagMap(tags []Tag) (tagMap, error) {
 		tm[tag] = true
 	}
 	if len(tm) == 0 {
-		tm[TagEmpty] = true
+		tm[gexcels.TagEmpty] = true
 	}
 	return tm, nil
 }
 
 // tableFileNameRegexp 表文件名正则表达式
-var tableFileNameRegexp = regexp.MustCompile(` + "`([A-Za-z]+\\w*)(?:\\.(` + tagPattern + `))?`" + `)
+var tableFileNameRegexp = regexp.MustCompile(` + "`(" + gexcels.NamePattern + `)(?:\.(` + gexcels.TagPattern + `))?` + "`" + `)
 
 // parseTableFileName 解析配置表文件名
-func parseTableFileName(fileName string) (string, Tag, error) {
+func parseTableFileName(fileName string) (string, gexcels.Tag, error) {
 	matches := tableFileNameRegexp.FindStringSubmatch(fileName)
 	if len(matches) != 3 {
 		return "", "", fmt.Errorf("table file name %s invalid", fileName)
 	}
-	if !Tag(matches[2]).Valid() {
+	if !gexcels.Tag(matches[2]).Valid() {
 		return "", "", fmt.Errorf("table file name %s tag invalid", fileName)
 	}
-	return matches[1], Tag(matches[2]), nil
+	return matches[1], gexcels.Tag(matches[2]), nil
 }
 
 // {{.ExportedManagerName}} 配置表管理器
@@ -538,7 +519,7 @@ func (m *{{.ExportedManagerName}}) set(mm *{{.ManagerName}}) {
 }
 
 // ReloadAllData 重载所有数据
-func (m *{{.ExportedManagerName}}) ReloadData(data map[string][]byte, tags ...Tag) error {
+func (m *{{.ExportedManagerName}}) ReloadData(data map[string][]byte, tags ...gexcels.Tag) error {
 	if len(data) == 0 {
 		return errors.New("{{.PkgName}}: there is nothing to reload")
 	}
@@ -573,7 +554,7 @@ func (m *{{.ExportedManagerName}}) ReloadData(data map[string][]byte, tags ...Ta
 }
 
 // ReloadFromDir 从文件夹重载数据
-func (m *{{.ExportedManagerName}}) ReloadDir(dir string, tags ...Tag) error {
+func (m *{{.ExportedManagerName}}) ReloadDir(dir string, tags ...gexcels.Tag) error {
 	tagMap, err := createTagMap(tags)
 	if err != nil {
 		return err
