@@ -298,7 +298,7 @@ func (p *Parser) parseTableFieldRules(td *Table, fd *gexcels.TableField, s strin
 				return errFieldRuleOnNonPrimitiveField(fr.FRName())
 			}
 		case *gexcels.FRLink:
-			if !fd.Type.Primitive() {
+			if !fd.Type.Primitive() && !(fd.Type == gexcels.FTArray && fd.ElementType.Primitive()) {
 				return errFieldRuleOnNonPrimitiveField(fr.FRName())
 			}
 			td.addLink(newTableLink([]string{fd.Name}, r.TableName, r.FieldName))
