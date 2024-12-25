@@ -279,6 +279,7 @@ func (p *Parser) parseTableFieldRules(td *Table, fd *gexcels.TableField, s strin
 
 	rules := strings.Split(s, gexcels.FRSep)
 	for _, rule := range rules {
+		rule = strings.TrimSpace(rule)
 		fr, err := gexcels.ParseFieldRule(rule)
 		if err != nil {
 			return err
