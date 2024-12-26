@@ -247,7 +247,7 @@ func (p *Parser) parseStructRule(sd *Struct, ruleStr string) error {
 		return nil
 	}
 
-	rules := strings.Split(ruleStr, gexcels.FRSep)
+	rules := strings.Split(ruleStr, p.options.FieldRuleSep)
 	for _, rule := range rules {
 		rule = strings.TrimSpace(rule)
 

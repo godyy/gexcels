@@ -28,6 +28,9 @@ type Options struct {
 	// 如果想在匹配其它标签时匹配空标签，需要在 FileTags 中包含 gexcels.TagEmpty.
 	FileTags []gexcels.Tag
 
+	// FieldRuleSep 字段规则分隔符，默认为'|'
+	FieldRuleSep string
+
 	tagMap     map[gexcels.Tag]bool
 	fileTagMap map[gexcels.Tag]bool
 }
@@ -53,6 +56,10 @@ func (opt *Options) init() error {
 	}
 	if len(opt.fileTagMap) == 0 {
 		opt.fileTagMap[gexcels.TagEmpty] = true
+	}
+
+	if opt.FieldRuleSep == "" {
+		opt.FieldRuleSep = "|"
 	}
 
 	return nil

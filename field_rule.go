@@ -8,9 +8,6 @@ import (
 	"strings"
 )
 
-// FRSep 字段规则分隔符
-const FRSep = "|"
-
 // FRNameValueSep 字段规则名称和值分隔符
 const FRNameValueSep = "="
 
