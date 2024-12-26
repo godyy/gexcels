@@ -330,6 +330,10 @@ func (p *Parser) parseTableFieldRules(td *Table, fd *gexcels.TableField, s strin
 
 // parseTableEntries 解析sheet中定义的条目数据到td指定的配置表
 func (p *Parser) parseTableEntries(td *Table, sheet *xlsx.Sheet) error {
+	if p.options.OnlyFields {
+		return nil
+	}
+
 	entryCount := sheet.MaxRow - gexcels.TableRowFirstEntry
 	if entryCount <= 0 {
 		return nil
@@ -470,16 +474,20 @@ func (p *Parser) parseGlobalTableField(td *Table, row *xlsx.Row) error {
 		0,
 	)
 
-	val, err := p.parseFieldValue(fd.Field, row.GetCell(gexcels.GlobalTableColFieldValue).Value)
-	if err != nil {
-		return err
-	}
-
 	if err := p.parseTableFieldRules(td, fd, row.GetCell(gexcels.GlobalTableColFieldRule).Value); err != nil {
 		return err
 	}
 
 	td.AddField(fd)
+
+	if p.options.OnlyFields {
+		return nil
+	}
+
+	val, err := p.parseFieldValue(fd.Field, row.GetCell(gexcels.GlobalTableColFieldValue).Value)
+	if err != nil {
+		return err
+	}
 	td.addEntryByName(fd.Name, val)
 
 	return nil

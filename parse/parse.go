@@ -31,6 +31,9 @@ type Options struct {
 	// FieldRuleSep 字段规则分隔符，默认为'|'
 	FieldRuleSep string
 
+	// OnlyFields 是否仅解析字段定义, 默认为 false
+	OnlyFields bool
+
 	tagMap     map[gexcels.Tag]bool
 	fileTagMap map[gexcels.Tag]bool
 }

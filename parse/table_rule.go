@@ -280,6 +280,10 @@ func checkFieldTypeOnLink(srcField, dstField *gexcels.Field) bool {
 
 // checkLinksBetweenTable 检查配置表之间的链接
 func (p *Parser) checkLinksBetweenTable() (errs []error) {
+	if p.options.OnlyFields {
+		return nil
+	}
+
 	for _, table := range p.Tables {
 		if err := p.checkTableLinks(table); err != nil {
 			errs = append(errs, err...)

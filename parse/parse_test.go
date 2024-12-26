@@ -19,6 +19,14 @@ func TestParse(t *testing.T) {
 	}
 }
 
+func TestParseOnlyFields(t *testing.T) {
+	options := &Options{OnlyFields: true}
+	_, err := Parse("../internal/test/excels", options)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRegexp(t *testing.T) {
 	t.Log(tableFileNameRegexp.FindStringSubmatch("test"))
 	t.Log(tableFileNameRegexp.FindStringSubmatch("test.test"))
