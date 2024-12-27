@@ -465,27 +465,50 @@ import (
 )
 
 // tagMap 标签映射
-type tagMap map[gexcels.Tag]bool
+// key 为标签值
+// value 为标签优先级, 值越小优先级越高
+type tagMap map[gexcels.Tag]int
 
 // match 匹配标签
 func (tm *tagMap) match(tag gexcels.Tag) bool {
-	if (*tm)[gexcels.TagAny] {
+	_, ok := (*tm)[gexcels.TagAny]
+	if !ok {
+		_, ok = (*tm)[tag]
+	}
+	return ok
+}
+
+// compareTag 比较 tag1 和 tag2，返回 tag1 的优先级是否高于 tag2
+func (tm *tagMap) compareTag(tag1, tag2 gexcels.Tag) bool {
+	i1, ok1 := (*tm)[tag1]
+	i2, ok2 := (*tm)[tag2]
+	if ok1 && ok2 {
+		return i1 < i2
+	}
+	if ok1 {
 		return true
 	}
-	return (*tm)[tag]
+	if ok2 {
+		return false
+	}
+	return strings.Compare(string(tag1), string(tag2)) > 0
 }
 
 // createTagMap 创建标签映射
+// 当同一标签重复指定时，以优先级最高者为准
 func createTagMap(tags []gexcels.Tag) (tagMap, error) {
 	tm := make(tagMap, len(tags))
-	for _, tag := range tags {
+	for i, tag := range tags {
 		if !tag.Valid() {
-			return nil, fmt.Errorf("{{.PkgName}}: tag %s invalid", tag)
+			return nil, fmt.Errorf("test: tag %s invalid", tag)
 		}
-		tm[tag] = true
+		if _, ok := tm[tag]; ok {
+			continue
+		}
+		tm[tag] = i
 	}
 	if len(tm) == 0 {
-		tm[gexcels.TagEmpty] = true
+		tm[gexcels.TagEmpty] = 0
 	}
 	return tm, nil
 }
@@ -518,10 +541,17 @@ func (m *{{.ExportedManagerName}}) set(mm *{{.ManagerName}}) {
 	atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&m.{{.ManagerName}})), unsafe.Pointer(mm))
 }
 
-// ReloadAllData 重载所有数据
+// tableDataInfo 配置表数据
+type tableDataInfo struct {
+	filename string      // 文件名
+	data     []byte      // 数据
+	tag      gexcels.Tag // 标签
+}
+
+// ReloadData 重载所有数据
 func (m *{{.ExportedManagerName}}) ReloadData(data map[string][]byte, tags ...gexcels.Tag) error {
 	if len(data) == 0 {
-		return errors.New("{{.PkgName}}: there is nothing to reload")
+		return errors.New("test: there is nothing to reload")
 	}
 
 	tagMap, err := createTagMap(tags)
@@ -531,21 +561,40 @@ func (m *{{.ExportedManagerName}}) ReloadData(data map[string][]byte, tags ...ge
 
 	mm := new{{.ManagerName}}()
 	tables := registerTables(mm)
+	tableDatas := make(map[string]*tableDataInfo)
 
 	for fileName, data := range data {
 		tableName, tag, err := parseTableFileName(fileName)
 		if err != nil {
-			return pkg_errors.WithMessage(err, "{{.PkgName}}")
+			return pkg_errors.WithMessage(err, "test")
 		}
+
 		if !tagMap.match(tag) {
 			continue
 		}
-		table := tables[tableName]
-		if table == nil {
-			return fmt.Errorf("{{.PkgName}}: table[%s] not exist", tableName)
+
+		if table := tables[tableName]; table == nil {
+			return fmt.Errorf("test: table[%s] not exist", tableName)
 		}
-		if err := table.loadData(data); err != nil {
-			return pkg_errors.WithMessagef(err, "{{.PkgName}}: load table[%s] data", tableName)
+
+		if tableData := tableDatas[tableName]; tableData == nil {
+			tableData = &tableDataInfo{
+				filename: fileName,
+				data:     data,
+				tag:      tag,
+			}
+			tableDatas[tableName] = tableData
+		} else if tagMap.compareTag(tag, tableData.tag) {
+			tableData.filename = fileName
+			tableData.data = data
+			tableData.tag = tag
+		}
+	}
+
+	for tableName, tableData := range tableDatas {
+		table := tables[tableName]
+		if err := table.loadData(tableData.data); err != nil {
+			return pkg_errors.WithMessagef(err, "test: load table[%s] data", tableData.filename)
 		}
 	}
 
@@ -553,7 +602,13 @@ func (m *{{.ExportedManagerName}}) ReloadData(data map[string][]byte, tags ...ge
 	return nil
 }
 
-// ReloadFromDir 从文件夹重载数据
+// tableFileInfo 配置表文件
+type tableFileInfo struct {
+	path string      // 路径
+	tag  gexcels.Tag // 标签
+}
+
+// ReloadDir 从文件夹重载数据
 func (m *{{.ExportedManagerName}}) ReloadDir(dir string, tags ...gexcels.Tag) error {
 	tagMap, err := createTagMap(tags)
 	if err != nil {
@@ -562,37 +617,57 @@ func (m *{{.ExportedManagerName}}) ReloadDir(dir string, tags ...gexcels.Tag) er
 
 	mm := new{{.ManagerName}}()
 	tables := registerTables(mm)
+	tableFiles := make(map[string]*tableFileInfo)
 
 	ext := "{{.Ext}}"
 	if err := filepath.Walk(dir, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
+
 		if info.IsDir() || filepath.Ext(info.Name()) != ext {
 			return nil
 		}
-		fileName := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+
+		fileName := strings.TrimSuffix(filepath.Base(path), ext)
 		tableName, tag, err := parseTableFileName(fileName)
 		if err != nil {
 			return err
 		}
+
 		if !tagMap.match(tag) {
 			return nil
 		}
-		table := tables[tableName]
-		if table == nil {
+
+		if table := tables[tableName]; table == nil {
 			return fmt.Errorf("table[%s] not exist", tableName)
 		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return pkg_errors.WithMessagef(err, "read table[%s] file", tableName)
+
+		if tableFile := tableFiles[tableName]; tableFile == nil {
+			tableFile = &tableFileInfo{
+				path: path,
+				tag:  tag,
+			}
+			tableFiles[tableName] = tableFile
+		} else if tagMap.compareTag(tag, tableFile.tag) {
+			tableFile.path = path
+			tableFile.tag = tag
 		}
-		if err := table.loadData(data); err != nil {
-			return pkg_errors.WithMessagef(err, "load table[%s] data", tableName)
-		}
+
 		return nil
 	}); err != nil {
-		return pkg_errors.WithMessage(err, "{{.PkgName}}")
+		return pkg_errors.WithMessage(err, "test")
+	}
+
+	for tableName, tableFile := range tableFiles {
+		data, err := os.ReadFile(tableFile.path)
+		if err != nil {
+			return pkg_errors.WithMessagef(err, "read table file [%s]", tableName)
+		}
+		table := tables[tableName]
+		if err := table.loadData(data); err != nil {
+			return pkg_errors.WithMessagef(err, "load table file [%s] data", tableName)
+		}
 	}
 
 	m.set(mm)

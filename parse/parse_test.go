@@ -12,7 +12,7 @@ func TestParse(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	options.FileTags = []gexcels.Tag{"test"}
+	options.FileTags = []gexcels.Tag{gexcels.TagEmpty, "test"}
 	_, err = Parse("../internal/test/excels", options)
 	if err != nil {
 		t.Fatal(err)
