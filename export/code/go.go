@@ -34,16 +34,14 @@ func ExportGo(p *parse.Parser, path string, options *Options, goOptions *GoOptio
 
 // goExporter go代码导出器
 type goExporter struct {
-	exporterBase                             // base
-	kindOptions            *GoOptions        // 分类选项
-	fieldNames             map[string]string // 导出的字段名
-	fieldTypes             map[string]string // 导出的字段类型
-	structNames            map[string]string // 导出的结构体名
-	tableNames             map[string]string // 导出的表名
-	tableStructNames       map[string]string // 导出的表结构体名
-	entryStructNames       map[string]string // 导出的条目结构体名
-	compositeKeyFieldNames map[string]string // 导出的组合键字段名
-	compositeKeyFieldTypes map[string]string // 导出的组合键字段类型
+	exporterBase                       // base
+	kindOptions      *GoOptions        // 分类选项
+	fieldNames       map[string]string // 导出的字段名
+	fieldTypes       map[string]string // 导出的字段类型
+	structNames      map[string]string // 导出的结构体名
+	tableNames       map[string]string // 导出的表名
+	tableStructNames map[string]string // 导出的表结构体名
+	entryStructNames map[string]string // 导出的条目结构体名
 }
 
 func createGoExporter(p *parse.Parser, path string, options *Options, kindOptions kindOptions) (exporter, error) {
@@ -52,16 +50,14 @@ func createGoExporter(p *parse.Parser, path string, options *Options, kindOption
 		return nil, ErrGoPkgEmpty
 	}
 	return &goExporter{
-		exporterBase:           newExporterBase(p, path, options),
-		kindOptions:            goOptions,
-		fieldNames:             make(map[string]string),
-		fieldTypes:             make(map[string]string),
-		structNames:            make(map[string]string),
-		tableNames:             make(map[string]string),
-		tableStructNames:       make(map[string]string),
-		entryStructNames:       make(map[string]string),
-		compositeKeyFieldNames: make(map[string]string),
-		compositeKeyFieldTypes: make(map[string]string),
+		exporterBase:     newExporterBase(p, path, options),
+		kindOptions:      goOptions,
+		fieldNames:       make(map[string]string),
+		fieldTypes:       make(map[string]string),
+		structNames:      make(map[string]string),
+		tableNames:       make(map[string]string),
+		tableStructNames: make(map[string]string),
+		entryStructNames: make(map[string]string),
 	}, nil
 }
 
@@ -91,7 +87,7 @@ func (e *goExporter) export() error {
 	return nil
 }
 
-// 将结构体定义导出为go代码文件
+// exportStructsFile 将结构体定义导出为go代码文件
 func (e *goExporter) exportStructsFile() error {
 	structs := e.parser.Structs
 	if len(structs) == 0 {
@@ -108,14 +104,21 @@ func (e *goExporter) exportStructsFile() error {
 	return nil
 }
 
-// 将所有配置表定义导出为go代码文件
+// exportTableFiles 将所有配置表定义导出为go代码文件
 func (e *goExporter) exportTableFiles() error {
 	for _, table := range e.parser.Tables {
 		if err := e.exportTableFile(table); err != nil {
 			return err
 		}
+		e.resetAfterExportTable()
 	}
 	return nil
+}
+
+// resetAfterExportTable 导出配置表后重置数据
+func (e *goExporter) resetAfterExportTable() {
+	e.fieldNames = make(map[string]string)
+	e.fieldTypes = make(map[string]string)
 }
 
 // 将配置表定义导出为go代码文件
