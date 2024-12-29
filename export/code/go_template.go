@@ -12,12 +12,9 @@ import (
 // templateGoStruct go结构体模版
 var templateGoStruct = template.Must(template.New("go_struct").
 	Parse(`type {{.Exporter.GetStructName .Struct}} struct {
-	{{range $index,$field := .Struct.Fields -}}
-	{{if $index}}{{"\n"}}{{end -}}
-	{{$.Exporter.GenStructField $field}}
-	{{- end}}
-}
-`))
+{{range $index,$field := .Struct.Fields -}}
+{{"\t"}}{{$.Exporter.GenStructField $field}}
+{{end}}}`))
 
 // GenStruct 生成结构体文本
 func (e *goExporter) GenStruct(sd *parse.Struct) string {
@@ -43,8 +40,7 @@ package {{.PkgName}}
 {{if $index}}{{"\n"}}{{end -}}
 // {{$structName}} {{$struct.Desc}}
 {{$.Exporter.GenStruct $struct}}
-{{- end}}
-`))
+{{end}}`))
 
 // GenStructsFile 生成go结构体文件文本
 func (e *goExporter) GenStructsFile() string {
@@ -62,11 +58,9 @@ func (e *goExporter) GenStructsFile() string {
 // templateGoEntryStruct go table结构体模版
 var templateGoEntryStruct = template.Must(template.New("go_struct").
 	Parse(`type {{.Exporter.GetEntryStructName .Table}} struct {
-	{{range $index,$field := .Table.Fields -}}
-	{{if $index}}{{"\n"}}{{end -}}
-	{{$.Exporter.GetEntryFieldName $field}} {{$.Exporter.GetEntryFieldType $field}} {{$.Exporter.GenEntryFieldTag $field}} // {{$field.Desc}}
-	{{- end}}
-}`))
+{{range $index,$field := .Table.Fields -}}
+{{"\t"}}{{$.Exporter.GetEntryFieldName $field}} {{$.Exporter.GetEntryFieldType $field}} {{$.Exporter.GenEntryFieldTag $field}} // {{$field.Desc}}
+{{end}}}`))
 
 // GenEntryStruct 生成go配置表结构体文本
 func (e *goExporter) GenEntryStruct(td *parse.Table) string {
@@ -86,8 +80,7 @@ var templateGoTableUniqueKeyMethod = template.Must(template.New("go_table_unique
 // {{$methodName}} mapping by {{.Exporter.GetEntryFieldName .Field}}
 func (t *{{.Exporter.GetTableStructName .Table}}) {{$methodName}}({{.Field.Name}} {{.Exporter.GetEntryFieldType .Field}}) *{{.Exporter.GetEntryStructName .Table}} {
 	return t.{{.Exporter.GetTableUniqueKeyFieldName .Field}}[{{.Field.Name}}]
-}
-`))
+}`))
 
 // GenTableUniqueKeyMethod 生成go配置表唯一键方法
 func (e *goExporter) GenTableUniqueKeyMethod(td *parse.Table, field *gexcels.TableField) string {
@@ -110,28 +103,29 @@ var templateGoTableCompositeKeyMethod = template.Must(template.New("go_table_com
 	Parse(`{{$methodName := .Exporter.GenTableCompositeKeyMethodName .CompositeKey -}}
 // {{$methodName}} composite-key {{.CompositeKey.Name}}
 func (t *{{.Exporter.GetTableStructName .Table}}) {{$methodName}} (
-{{range $index, $fieldName := .CompositeKey.FieldNames -}}
+{{- range $index, $fieldName := .CompositeKey.FieldNames -}}
 {{if $index}}{{", "}}{{end}}{{$fieldName -}}
 {{$field := $.Table.GetFieldByName $fieldName}} {{$.Exporter.GetEntryFieldType $field}}{{end -}}
 ) *{{.Exporter.GetEntryStructName .Table}} {
-	{{$up := printf "t.%s" (.Exporter.GetTableCompositeKeyFieldName .CompositeKey) -}}
-	{{$cur := "" -}}
-	{{$lastField := "" -}}
-	{{range $index, $fieldName := .CompositeKey.FieldNames -}}
-	{{$lastField = $fieldName -}}
-	{{$field := $.Table.GetFieldByName $fieldName -}}
-	{{$cur = printf "by%s" ($.Exporter.GetEntryFieldName $field) -}}
-	{{if lt $index (sub (len $.CompositeKey.FieldNames) 1) -}}
-	{{if $index}} else {{end -}}
-	if {{$cur}} := {{$up}}[{{$fieldName}}]; {{$cur}} == nil {
-		{{$up = $cur -}}
+{{$up := printf "t.%s" (.Exporter.GetTableCompositeKeyFieldName .CompositeKey)}}{{$cur := "" -}}
+{{range $index, $fieldName := .CompositeKey.FieldNames -}}
+{{if $index}} else {{end -}}
+{{if lt $index (sub (len $.CompositeKey.FieldNames) 1) -}}
+{{$field := $.Table.GetFieldByName $fieldName -}}
+{{$cur = printf "by%s" ($.Exporter.GetEntryFieldName $field) -}}
+	{{"\t"}}if {{$cur}} := {{$up}}[{{$fieldName}}]; {{$cur}} == nil {
 		return nil
-	}{{else}} else {
-		return {{$up}}[{{$lastField}}]
-	}{{end}}
-	{{- end}}
-}
-`))
+	}
+{{- else -}}
+{{if eq 1 (len $.CompositeKey.FieldNames) -}}
+	{{"\t"}}return {{$up}}[{{$fieldName}}]
+{{- else}}{
+		return {{$up}}[{{$fieldName}}]
+{{"\t"}}}{{end}}
+{{- end}}
+{{- $up = $cur -}}
+{{- end}}
+}`))
 
 // GenTableCompositeKeyMethod 生成go配置表组合键方法
 func (e *goExporter) GenTableCompositeKeyMethod(td *parse.Table, ck *parse.TableCompositeKey) string {
@@ -154,24 +148,24 @@ var templateGoTableCompositeKeyInitMethod = template.Must(template.New("go_table
 	}).Parse(`{{$methodName := .Exporter.GenTableCompositeKeyInitMethodName .CompositeKey -}}
 // {{$methodName}} composite-key {{.CompositeKey.Name}}
 func (t *{{.Exporter.GetTableStructName .Table}}) {{$methodName}}(e *{{.Exporter.GetEntryStructName .Table}}) {
-	{{$lastIndex := sub (len .CompositeKey.FieldNames) 1 -}}
-	{{$up := printf "t.%s" (.Exporter.GetTableCompositeKeyFieldName .CompositeKey) -}}
-	{{$cur := "" -}}
-	{{range $index, $fieldName := .CompositeKey.FieldNames -}}
-	{{if eq $index $lastIndex}}{{break}}{{end -}}
-	{{$field := $.Table.GetFieldByName $fieldName -}}
-	{{$fieldExportName := $.Exporter.GetEntryFieldName $field -}}
-	{{$cur = printf "by%s" $fieldExportName -}}
-	{{$cur}} := {{$up}}[e.{{$fieldExportName}}]
+{{$lastIndex := sub (len .CompositeKey.FieldNames) 1 -}}
+{{$up := printf "t.%s" (.Exporter.GetTableCompositeKeyFieldName .CompositeKey) -}}
+{{$cur := $up -}}
+{{range $index, $fieldName := .CompositeKey.FieldNames -}}
+{{if eq $index $lastIndex}}{{break}}{{end -}}
+{{$field := $.Table.GetFieldByName $fieldName -}}
+{{$fieldExportName := $.Exporter.GetEntryFieldName $field -}}
+{{$cur = printf "by%s" $fieldExportName -}}
+	{{"\t"}}{{$cur}} := {{$up}}[e.{{$fieldExportName}}]
 	if {{$cur}} == nil {
 		{{$cur}} = make({{$.Exporter.GenTableCompositeKeyFieldType $.Table (slice $.CompositeKey.FieldNames (add $index 1))}})
 		{{$up}}[e.{{$fieldExportName}}] = {{$cur}}
 	}
-	{{$up = $cur}}
-	{{- end}}
-	{{- $lastField := .Table.GetFieldByName (index .CompositeKey.FieldNames $lastIndex)}}{{$cur}}[e.{{.Exporter.GetEntryFieldName $lastField}}] = e
-}
-`))
+{{$up = $cur}}
+{{- end}}
+{{- $lastField := .Table.GetFieldByName (index .CompositeKey.FieldNames $lastIndex) -}}
+	{{"\t"}}{{$cur}}[e.{{.Exporter.GetEntryFieldName $lastField}}] = e
+}`))
 
 // GenTableCompositeKeyInitMethod 生成go配置表组合键初始化方法
 func (e *goExporter) GenTableCompositeKeyInitMethod(td *parse.Table, ck *parse.TableCompositeKey) string {
@@ -194,28 +188,29 @@ var templateGoTableGroupMethod = template.Must(template.New("go_table_group_meth
 	Parse(`{{$methodName := .Exporter.GenTableGroupMethodName .Group -}}
 // {{$methodName}} group {{.Group.Name}}
 func (t *{{.Exporter.GetTableStructName .Table}}) {{$methodName}} (
-{{range $index, $fieldName := .Group.FieldNames -}}
+{{- range $index, $fieldName := .Group.FieldNames -}}
 {{if $index}}{{", "}}{{end}}{{$fieldName -}}
 {{$field := $.Table.GetFieldByName $fieldName}} {{$.Exporter.GetEntryFieldType $field}}{{end -}}
 ) []*{{.Exporter.GetEntryStructName .Table}} {
-	{{$up := printf "t.%s" (.Exporter.GetTableGroupFieldName .Group) -}}
-	{{$cur := "" -}}
-	{{$lastField := "" -}}
-	{{range $index, $fieldName := .Group.FieldNames -}}
-	{{$lastField = $fieldName -}}
-	{{$field := $.Table.GetFieldByName $fieldName -}}
-	{{$cur = printf "by%s" ($.Exporter.GetEntryFieldName $field) -}}
-	{{if lt $index (sub (len $.Group.FieldNames) 1) -}}
-	{{if $index}} else {{end -}}
-	if {{$cur}} := {{$up}}[{{$fieldName}}]; {{$cur}} == nil {
-		{{$up = $cur -}}
+{{$up := printf "t.%s" (.Exporter.GetTableGroupFieldName .Group)}}{{$cur := "" -}}
+{{range $index, $fieldName := .Group.FieldNames -}}
+{{if $index}} else {{end -}}
+{{if lt $index (sub (len $.Group.FieldNames) 1) -}}
+{{$field := $.Table.GetFieldByName $fieldName -}}
+{{$cur = printf "by%s" ($.Exporter.GetEntryFieldName $field) -}}
+	{{"\t"}}if {{$cur}} := {{$up}}[{{$fieldName}}]; {{$cur}} == nil {
 		return nil
-	}{{else}} else {
-		return {{$up}}[{{$lastField}}]
-	}{{end}}
-	{{- end}}
-}
-`))
+	}
+{{- else -}}
+{{if eq 1 (len $.Group.FieldNames) -}}
+	{{"\t"}}return {{$up}}[{{$fieldName}}]
+{{- else}}{
+		return {{$up}}[{{$fieldName}}]
+{{"\t"}}}{{end}}
+{{- end}}
+{{- $up = $cur -}}
+{{- end}}
+}`))
 
 // GenTableGroupMethod 生成go配置表分组方法
 func (e *goExporter) GenTableGroupMethod(td *parse.Table, group *parse.TableGroup) string {
@@ -238,25 +233,24 @@ var templateGoTableGroupInitMethod = template.Must(template.New("go_table_group_
 	}).Parse(`{{$methodName := .Exporter.GenTableGroupInitMethodName .Group -}}
 // {{$methodName}} group {{.Group.Name}}
 func (t *{{.Exporter.GetTableStructName .Table}}) {{$methodName}}(e *{{.Exporter.GetEntryStructName .Table}}) {
-	{{$lastIndex := sub (len .Group.FieldNames) 1 -}}
-	{{$up := printf "t.%s" (.Exporter.GetTableGroupFieldName .Group) -}}
-	{{$cur := "" -}}
-	{{range $index, $fieldName := .Group.FieldNames -}}
-	{{if eq $index $lastIndex}}{{break}}{{end -}}
-	{{$field := $.Table.GetFieldByName $fieldName -}}
-	{{$fieldExportName := $.Exporter.GetEntryFieldName $field -}}
-	{{$cur = printf "by%s" $fieldExportName -}}
-	{{$cur}} := {{$up}}[e.{{$fieldExportName}}]
+{{$lastIndex := sub (len .Group.FieldNames) 1 -}}
+{{$up := printf "t.%s" (.Exporter.GetTableGroupFieldName .Group) -}}
+{{$cur := $up -}}
+{{range $index, $fieldName := .Group.FieldNames -}}
+{{if eq $index $lastIndex}}{{break}}{{end -}}
+{{$field := $.Table.GetFieldByName $fieldName -}}
+{{$fieldExportName := $.Exporter.GetEntryFieldName $field -}}
+{{$cur = printf "by%s" $fieldExportName -}}
+	{{"\t"}}{{$cur}} := {{$up}}[e.{{$fieldExportName}}]
 	if {{$cur}} == nil {
 		{{$cur}} = make({{$.Exporter.GenTableGroupFieldType $.Table (slice $.Group.FieldNames (add $index 1))}})
 		{{$up}}[e.{{$fieldExportName}}] = {{$cur}}
 	}
-	{{$up = $cur}}
-	{{- end}}
-	{{- $lastField := .Table.GetFieldByName (index .Group.FieldNames $lastIndex) -}}
-	{{$cur}}[e.{{.Exporter.GetEntryFieldName $lastField}}] = append({{$cur}}[e.{{.Exporter.GetEntryFieldName $lastField}}], e)
-}
-`))
+{{$up = $cur}}
+{{- end}}
+{{- $lastField := .Table.GetFieldByName (index .Group.FieldNames $lastIndex) -}}
+	{{"\t"}}{{$cur}}[e.{{.Exporter.GetEntryFieldName $lastField}}] = append({{$cur}}[e.{{.Exporter.GetEntryFieldName $lastField}}], e)
+}`))
 
 // GenTableGroupInitMethod 生成go配置表分组初始化方法
 func (e *goExporter) GenTableGroupInitMethod(td *parse.Table, group *parse.TableGroup) string {
@@ -279,27 +273,25 @@ var templateGoNormalTableFile = template.Must(template.New("go_table_file").
 package {{.PkgName}}
 
 {{.Exporter.GenEntryStruct .Table}}
-
-{{$entryStructName := .Exporter.GetEntryStructName .Table}}
-{{$tableStructName := .Exporter.GetTableStructName .Table}}
-
+{{$entryStructName := .Exporter.GetEntryStructName .Table -}}
+{{- $tableStructName := .Exporter.GetTableStructName .Table}}
 // {{$tableStructName}} {{.Table.Desc}}
 type {{$tableStructName}} struct {
 	entries []*{{$entryStructName}} // data entries
-	{{$hasUnique := false -}}
-	{{range $index, $field := .Table.Fields -}}
-	{{if $field.Unique -}}
-	{{if $hasUnique}}{{"\n"}}{{end -}}
-	{{$hasUnique = true -}}
-	{{$.Exporter.GetTableUniqueKeyFieldName $field}} map[{{$.Exporter.GetEntryFieldType $field}}]*{{$entryStructName}} // mapping by {{$.Exporter.GetFieldName $field.Field}}
-	{{- end}}
-	{{- end}}
-	{{- range $index, $ck := .Table.CompositeKeys -}}
-		{{"\n"}}{{$.Exporter.GetTableCompositeKeyFieldName $ck}} {{$.Exporter.GetTableCompositeKeyFieldType $.Table $ck}} // composite-key {{$ck.Name}}
-	{{- end}}
-	{{- range $index, $group := .Table.Groups -}}
-		{{"\n"}}{{$.Exporter.GetTableGroupFieldName $group}} {{$.Exporter.GetTableGroupFieldType $.Table $group}} // group {{$group.Name}}
-	{{- end}}
+{{$hasUnique := false -}}
+{{range $index, $field := .Table.Fields -}}
+{{if $field.Unique -}}
+{{if $hasUnique}}{{"\n"}}{{end -}}
+{{$hasUnique = true -}}
+	{{"\t"}}{{$.Exporter.GetTableUniqueKeyFieldName $field}} map[{{$.Exporter.GetEntryFieldType $field}}]*{{$entryStructName}} // mapping by {{$.Exporter.GetFieldName $field.Field}}
+{{- end}}
+{{- end}}
+{{- range $index, $ck := .Table.CompositeKeys -}}
+{{"\n"}}{{"\t"}}{{$.Exporter.GetTableCompositeKeyFieldName $ck}} {{$.Exporter.GetTableCompositeKeyFieldType $.Table $ck}} // composite-key {{$ck.Name}}
+{{- end}}
+{{- range $index, $group := .Table.Groups -}}
+{{"\n"}}{{"\t"}}{{$.Exporter.GetTableGroupFieldName $group}} {{$.Exporter.GetTableGroupFieldType $.Table $group}} // group {{$group.Name}}
+{{- end}}
 }
 
 func (t *{{.Exporter.GetTableStructName .Table}}) List() []*{{$entryStructName}} { return t.entries }
@@ -311,15 +303,15 @@ func (t *{{.Exporter.GetTableStructName .Table}}) List() []*{{$entryStructName}}
 {{$hasUnique = true -}}
 {{$.Exporter.GenTableUniqueKeyMethod $.Table $field}}
 {{- end}}
-{{- end}}
-
-{{range $index, $ck := .Table.CompositeKeys -}}
-{{if $index}}{{"\n"}}{{end -}}
+{{- end -}}
+{{- if len .Table.CompositeKeys}}{{"\n\n"}}{{end -}}
+{{- range $index, $ck := .Table.CompositeKeys -}}
+{{if $index}}{{"\n\n"}}{{end -}}
 {{$.Exporter.GenTableCompositeKeyMethod $.Table $ck}}
 {{- end}}
-
-{{range $index, $group := .Table.Groups -}}
-{{if $index}}{{"\n"}}{{end -}}
+{{- if len .Table.Groups}}{{"\n\n"}}{{end -}}
+{{- range $index, $group := .Table.Groups -}}
+{{if $index}}{{"\n\n"}}{{end -}}
 {{$.Exporter.GenTableGroupMethod $.Table $group}}
 {{- end}}
 
@@ -330,62 +322,62 @@ func (t *{{$tableStructName}}) name() string {
 {{.Exporter.GenTableLoadDataMethod .Table}}
 
 func (t *{{$tableStructName}}) init() {
-	{{$hasUnique := false -}}
-	{{range $index,$field := .Table.Fields -}}
-	{{if $field.Unique -}}
-	{{if $hasUnique}}{{"\n"}}{{end -}}
-	{{$hasUnique = true -}}
-	t.{{$.Exporter.GetTableUniqueKeyFieldName $field}} = make(map[{{$.Exporter.GetEntryFieldType $field}}]*{{$entryStructName}}, len(t.entries))
-	{{- end}}
-	{{- end}}
+{{$hasUnique := false -}}
+{{range $index,$field := .Table.Fields -}}
+{{if $field.Unique -}}
+{{if $hasUnique}}{{"\n"}}{{end -}}
+{{$hasUnique = true -}}
+	{{"\t"}}t.{{$.Exporter.GetTableUniqueKeyFieldName $field}} = make(map[{{$.Exporter.GetEntryFieldType $field}}]*{{$entryStructName}}, len(t.entries))
+{{- end}}
+{{- end}}
 	for _, e := range t.entries {
-		{{$hasUnique := false -}}
-		{{range $index, $field := .Table.Fields -}}
-		{{if $field.Unique -}}
-		{{if $hasUnique}}{{"\n"}}{{end -}}
-		{{$hasUnique = true -}}
-		t.{{$.Exporter.GetTableUniqueKeyFieldName $field}}[e.{{$.Exporter.GetEntryFieldName $field}}] = e
-		{{- end}}
-		{{- end}}
-		{{- range $index, $ck := .Table.CompositeKeys -}}
-		{{"\n" -}}
-		t.{{$.Exporter.GenTableCompositeKeyInitMethodName $ck}}(e)
-		{{- end}}
-		{{- range $index, $group := .Table.Groups -}}
-		{{"\n" -}}
-		t.{{$.Exporter.GenTableGroupInitMethodName $group}}(e)
-		{{- end}}
+{{$hasUnique := false -}}
+{{range $index, $field := .Table.Fields -}}
+{{if $field.Unique -}}
+{{if $hasUnique}}{{"\n"}}{{end -}}
+{{$hasUnique = true -}}
+		{{"\t\t"}}t.{{$.Exporter.GetTableUniqueKeyFieldName $field}}[e.{{$.Exporter.GetEntryFieldName $field}}] = e
+{{- end}}
+{{- end}}
+{{- range $index, $ck := .Table.CompositeKeys -}}
+{{"\n" -}}
+		{{"\t\t"}}t.{{$.Exporter.GenTableCompositeKeyInitMethodName $ck}}(e)
+{{- end}}
+{{- range $index, $group := .Table.Groups -}}
+{{"\n" -}}
+		{{"\t\t"}}t.{{$.Exporter.GenTableGroupInitMethodName $group}}(e)
+{{- end}}
 	}	
 }
-
+{{- if len .Table.CompositeKeys}}{{"\n\n"}}{{end -}}
 {{range $index, $ck := .Table.CompositeKeys -}}
-{{if $index}}{{"\n"}}{{end -}}
+{{if $index}}{{"\n\n"}}{{end -}}
 {{$.Exporter.GenTableCompositeKeyInitMethod $.Table $ck}}
 {{- end}}
-
+{{- if len .Table.Groups}}{{"\n\n"}}{{end -}}
 {{range $index, $group := .Table.Groups -}}
-{{if $index}}{{"\n"}}{{end -}}
+{{if $index}}{{"\n\n"}}{{end -}}
 {{$.Exporter.GenTableGroupInitMethod $.Table $group}}
 {{- end}}
 
 func new{{$tableStructName}}() *{{$tableStructName}} {
 	return &{{$tableStructName}} {
-		{{$hasUnique := false -}}
-		{{range $index, $field := .Table.Fields -}}
-		{{if $field.Unique -}}
-		{{if $hasUnique}}{{"\n"}}{{end -}}
-		{{$hasUnique = true -}}
-		{{$.Exporter.GetTableUniqueKeyFieldName $field}}: map[{{$.Exporter.GetEntryFieldType $field}}]*{{$entryStructName}}{},
-		{{- end}}
-		{{- end}}
-		{{- range $index, $ck := .Table.CompositeKeys -}}
-		{{"\n" -}}
-		{{$.Exporter.GetTableCompositeKeyFieldName $ck}}: {{$.Exporter.GetTableCompositeKeyFieldType $.Table $ck}}{},
-		{{- end}}
-		{{- range $index, $group := .Table.Groups -}}
-		{{"\n" -}}
-		{{$.Exporter.GetTableGroupFieldName $group}}: {{$.Exporter.GetTableGroupFieldType $.Table $group}}{},
-		{{- end}}
+{{$hasUnique := false -}}
+{{range $index, $field := .Table.Fields -}}
+{{if $field.Unique -}}
+{{if $hasUnique}}{{"\n"}}{{end -}}
+{{$hasUnique = true -}}
+		{{"\t\t"}}{{$.Exporter.GetTableUniqueKeyFieldName $field}}: map[{{$.Exporter.GetEntryFieldType $field}}]*{{$entryStructName}}{},
+{{- end}}
+{{- end}}
+{{- range $index, $ck := .Table.CompositeKeys -}}
+{{"\n" -}}
+		{{"\t\t"}}{{$.Exporter.GetTableCompositeKeyFieldName $ck}}: {{$.Exporter.GetTableCompositeKeyFieldType $.Table $ck}}{},
+{{- end}}
+{{- range $index, $group := .Table.Groups -}}
+{{"\n" -}}
+		{{"\t\t"}}{{$.Exporter.GetTableGroupFieldName $group}}: {{$.Exporter.GetTableGroupFieldType $.Table $group}}{},
+{{- end}}
 	}
 }
 `))
@@ -413,10 +405,10 @@ package {{.PkgName}}
 {{$tableStructName := .Exporter.GetTableStructName .Table -}}
 // {{$tableStructName}} {{.Table.Desc}}
 type {{$tableStructName}} struct {
-	{{range $index, $field := .Table.Fields -}}
-	{{if $index}}{{"\n"}}{{end -}}
-	{{$.Exporter.GenTableStructField $field}}
-	{{- end}}
+{{range $index, $field := .Table.Fields -}}
+{{if $index}}{{"\n"}}{{end -}}
+	{{"\t"}}{{$.Exporter.GenTableStructField $field}}
+{{- end}}
 }
 
 func (t *{{$tableStructName}}) name() string {
@@ -682,10 +674,10 @@ type table interface{
 
 // {{.ManagerName}} 封装管理器数据
 type {{.ManagerName}} struct {
-	{{range $index, $table := .Tables -}}
-	{{if $index}}{{"\n"}}{{end -}}
-	{{$.Exporter.GenMgrTableFieldName $table}} *{{$.Exporter.GetTableStructName $table}} // {{$table.Desc}}
-	{{- end}}
+{{range $index, $table := .Tables -}}
+{{if $index}}{{"\n"}}{{end -}}
+	{{"\t"}}{{$.Exporter.GenMgrTableFieldName $table}} *{{$.Exporter.GetTableStructName $table}} // {{$table.Desc}}
+{{- end}}
 }
 
 func new{{.ManagerName}}() *{{.ManagerName}} {
@@ -693,7 +685,7 @@ func new{{.ManagerName}}() *{{.ManagerName}} {
 }
 
 {{range $index, $table := .Tables -}}
-{{if $index}}{{"\n"}}{{end -}}
+{{if $index}}{{"\n\n"}}{{end -}}
 {{$methodName := $.Exporter.GenMgrTableMethodName $table -}}
 // {{$methodName}} {{$table.Desc}}
 func (m *{{$.ManagerName}}) {{$methodName}}() *{{$.Exporter.GetTableStructName $table}} { return m.{{$.Exporter.GenMgrTableFieldName $table}} }
@@ -702,13 +694,13 @@ func (m *{{$.ManagerName}}) {{$methodName}}() *{{$.Exporter.GetTableStructName $
 // registerTables 注册配置表
 func registerTables(m *{{.ManagerName}}) map[string]table {
 	tables := make(map[string]table, {{len .Tables}})
-	{{range $index, $table := .Tables -}}
-	{{if $index}}{{"\n"}}{{end -}}
-	// {{$table.Desc -}}
-	{{$fieldName := $.Exporter.GenMgrTableFieldName $table}}
+{{range $index, $table := .Tables -}}
+{{if $index}}{{"\n"}}{{end -}}
+	{{"\t"}}// {{$table.Desc -}}
+{{$fieldName := $.Exporter.GenMgrTableFieldName $table}}
 	m.{{$fieldName}} = new{{$.Exporter.GetTableStructName $table}}()
 	tables[m.{{$fieldName}}.name()] = m.{{$fieldName}}
-	{{- end}}
+{{- end}}
 	return tables
 }
 `))
