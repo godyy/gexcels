@@ -1,13 +1,13 @@
 package parse
 
 import (
-	"encoding/json"
 	"fmt"
-	"github.com/godyy/gexcels"
-	"github.com/godyy/gutils/buffer/bytes"
 	"reflect"
 	"strconv"
 	"strings"
+
+	"github.com/godyy/gexcels"
+	"github.com/godyy/gutils/buffer/bytes"
 )
 
 const (

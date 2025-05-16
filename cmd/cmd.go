@@ -2,13 +2,14 @@ package main
 
 import (
 	"flag"
+	"log"
+	"strings"
+
 	"github.com/godyy/gexcels"
 	"github.com/godyy/gexcels/export"
 	"github.com/godyy/gexcels/export/code"
 	"github.com/godyy/gexcels/export/data"
 	"github.com/godyy/gexcels/parse"
-	"log"
-	"strings"
 )
 
 var (
@@ -37,14 +38,15 @@ func main() {
 	}
 
 	codeKind.FromString(*sCodeKind)
-	if codeKind.Valid() {
+	if !codeKind.Valid() {
 		log.Fatalf("code kind \"%s\" invalid", *sCodeKind)
 	}
 
 	dataKind.FromString(*sDataKind)
-	if dataKind.Valid() {
+	if !dataKind.Valid() {
 		log.Fatalf("data kind \"%s\" invalid", *sDataKind)
 	}
+	codeOptions.DataKind = dataKind
 
 	switch codeKind {
 	case export.CodeGo:
@@ -67,7 +69,7 @@ func main() {
 		parseOptions.Tags = make([]gexcels.Tag, len(s))
 		for i, v := range s {
 			tag := gexcels.Tag(v)
-			if tag.Valid() {
+			if !tag.Valid() {
 				log.Fatalf("tag \"%s\" invalid", v)
 			}
 			parseOptions.Tags[i] = gexcels.Tag(v)
@@ -78,7 +80,7 @@ func main() {
 		parseOptions.FileTags = make([]gexcels.Tag, len(s))
 		for i, v := range s {
 			tag := gexcels.Tag(v)
-			if tag.Valid() {
+			if !tag.Valid() {
 				log.Fatalf("file tag \"%s\" invalid", v)
 			}
 			parseOptions.FileTags[i] = gexcels.Tag(v)

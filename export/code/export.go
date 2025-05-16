@@ -3,11 +3,12 @@ package code
 import (
 	"errors"
 	"fmt"
+	"os"
+
 	"github.com/godyy/gexcels/export"
 	"github.com/godyy/gexcels/internal/utils"
 	"github.com/godyy/gexcels/parse"
 	pkg_errors "github.com/pkg/errors"
-	"os"
 )
 
 // ErrNoParserSpecified 未指定解析器
@@ -89,7 +90,7 @@ func doExport(p *parse.Parser, path string, options *Options, kindOptions kindOp
 	}
 
 	if !options.DataKind.Valid() {
-		return fmt.Errorf("export code: code-kind %d invalid", options.DataKind)
+		return fmt.Errorf("export code: data-kind %d invalid", options.DataKind)
 	}
 	options.init()
 

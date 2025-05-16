@@ -1,8 +1,9 @@
 package parse
 
 import (
-	"github.com/godyy/gexcels"
 	"testing"
+
+	"github.com/godyy/gexcels"
 )
 
 func TestParse(t *testing.T) {
@@ -32,12 +33,12 @@ func TestRegexp(t *testing.T) {
 	t.Log(tableFileNameRegexp.FindStringSubmatch("test.test"))
 	t.Log(tableFileNameRegexp.FindStringSubmatch("test."))
 
-	t.Log(structFileNameRegexp.FindStringSubmatch("common.struct"))
-	t.Log(structFileNameRegexp.FindStringSubmatch("common.struct.test"))
-	t.Log(structFileNameRegexp.FindStringSubmatch("common.struct."))
-	t.Log(structFileNameRegexp.FindStringSubmatch("common.struct.0"))
-	t.Log(structFileNameRegexp.FindStringSubmatch("common.struct.0.test"))
-	t.Log(structFileNameRegexp.FindStringSubmatch("common.struct.0"))
+	t.Log(structFileNameRegexp.FindStringSubmatch("core.struct"))
+	t.Log(structFileNameRegexp.FindStringSubmatch("core.struct.test"))
+	t.Log(structFileNameRegexp.FindStringSubmatch("core.struct."))
+	t.Log(structFileNameRegexp.FindStringSubmatch("core.struct.0"))
+	t.Log(structFileNameRegexp.FindStringSubmatch("core.struct.0.test"))
+	t.Log(structFileNameRegexp.FindStringSubmatch("core.struct.0"))
 
 	t.Log(structSheetNameRegexp.FindStringSubmatch("|Struct"))
 	t.Log(structSheetNameRegexp.FindStringSubmatch("|Struct.0"))
