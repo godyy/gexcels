@@ -3,16 +3,17 @@ package code
 import (
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+
 	"github.com/godyy/gexcels"
 	"github.com/godyy/gexcels/export"
 	"github.com/godyy/gexcels/internal/log"
 	"github.com/godyy/gexcels/internal/utils"
 	"github.com/godyy/gexcels/parse"
 	pkg_errors "github.com/pkg/errors"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
 )
 
 // ErrGoPkgEmpty 空go包名错误
@@ -161,6 +162,10 @@ func (e *goExporter) exportLoadHelperFile() error {
 		if err := e.exportBytesLoadHelperFile(); err != nil {
 			return err
 		}
+	case export.DataBson:
+		if err := e.exportBSONLoadHelperFile(); err != nil {
+			return err
+		}
 	default:
 		panic(fmt.Sprintf("export code: go: load helper file: data-kind %d invalid", e.options.DataKind))
 	}
@@ -186,6 +191,16 @@ func (e *goExporter) exportBytesLoadHelperFile() error {
 		return pkg_errors.WithMessagef(err, "export code: go: bytes_load_helper to [%s]", filePath)
 	}
 	log.PrintfGreen("export code: go: bytes_load_helper to [%s]", filePath)
+	return nil
+}
+
+func (e *goExporter) exportBSONLoadHelperFile() error {
+	content := e.GenBSONLoadHelperFile()
+	filePath := filepath.Join(e.path, e.kindOptions.PkgName+"_load_.go")
+	if err := os.WriteFile(filePath, ([]byte)(content), os.ModePerm); err != nil {
+		return pkg_errors.WithMessagef(err, "export code: go: bson_load_helper to [%s]", filePath)
+	}
+	log.PrintfGreen("export code: go: bson_load_helper to [%s]", filePath)
 	return nil
 }
 
@@ -421,6 +436,8 @@ func (e *goExporter) GenStructFieldTag(fd *gexcels.Field) string {
 	switch e.options.DataKind {
 	case export.DataJson:
 		return "`json:\"" + fd.Name + ",omitempty\"`"
+	case export.DataBson:
+		return "`bson:\"" + fd.Name + ",omitempty\"`"
 	default:
 		return ""
 	}
@@ -432,9 +449,15 @@ func (e *goExporter) GenEntryFieldTag(fd *gexcels.TableField) string {
 	case export.DataJson:
 		name := fd.Name
 		if fd.Col == gexcels.TableColFieldID {
-			name = gexcels.TableFieldIDJsonTagName
+			name = export.TableFieldIDJsonName
 		}
 		return "`json:\"" + name + ",omitempty\"`"
+	case export.DataBson:
+		name := fd.Name
+		if fd.Col == gexcels.TableColFieldID {
+			name = export.TableFieldIDBsonName
+		}
+		return "`bson:\"" + name + ",omitempty\"`"
 	default:
 		return ""
 	}
@@ -541,6 +564,12 @@ func (e *goExporter) GenTableLoadDataMethod(td *parse.Table) string {
 			return e.GenGlobalTableLoadBytes(td)
 		} else {
 			return e.GenNormalTableLoadBytes(td)
+		}
+	case export.DataBson:
+		if td.IsGlobal {
+			return e.GenGlobalTableLoadBson(td)
+		} else {
+			return e.GenNormalTableLoadBson(td)
 		}
 	default:
 		panic(fmt.Sprintf("export code: go: generate table load data method: data-kind %d invalid", e.options.DataKind))

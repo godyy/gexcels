@@ -3,6 +3,10 @@ package data
 import (
 	"encoding/base64"
 	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
+
 	"github.com/godyy/gexcels"
 	internal_define "github.com/godyy/gexcels/export"
 	"github.com/godyy/gexcels/internal/log"
@@ -10,35 +14,26 @@ import (
 	"github.com/godyy/gexcels/parse"
 	"github.com/godyy/gutils/buffer/bytes"
 	pkg_errors "github.com/pkg/errors"
-	"os"
-	"path/filepath"
-	"reflect"
 )
-
-// bytesOption bytes导出选项
-type bytesOption struct {
-}
-
-func (opts *bytesOption) kind() internal_define.DataKind {
-	return internal_define.DataBytes
-}
 
 // ExportBytes 导出bytes格式数据
 func ExportBytes(p *parse.Parser, path string) error {
-	return doExport(p, path, &bytesOption{})
+	if p == nil {
+		return ErrNoParserSpecified
+	}
+
+	if path == "" {
+		return ErrNoPathSpecified
+	}
+
+	return doExport(&bytesExporter{parser: p, path: path, buf: bytes.NewBuffer(make([]byte, 0, 128))})
 }
 
 // bytesExporter bytes导出器
 type bytesExporter struct {
-	exporterBase
-	buf *bytes.Buffer
-}
-
-func createBytesExporter(p *parse.Parser, path string, options kindOptions) (exporter, error) {
-	return &bytesExporter{
-		exporterBase: newExporterBase(p, path),
-		buf:          bytes.NewBuffer(make([]byte, 0, 128)),
-	}, nil
+	parser *parse.Parser
+	path   string
+	buf    *bytes.Buffer
 }
 
 func (e *bytesExporter) kind() internal_define.DataKind {
@@ -47,6 +42,10 @@ func (e *bytesExporter) kind() internal_define.DataKind {
 
 func (e *bytesExporter) export() error {
 	log.Printf("export data bytes to [%s]", e.path)
+
+	if err := os.MkdirAll(e.path, os.ModePerm); err != nil {
+		return pkg_errors.WithMessagef(err, "mkdir")
+	}
 
 	for _, table := range e.parser.Tables {
 		if err := e.exportTableFile(table); err != nil {

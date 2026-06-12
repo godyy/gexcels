@@ -25,9 +25,6 @@ const TableColFieldID = 0
 // TableFieldIDName 配置表ID字段名
 const TableFieldIDName = "ID"
 
-// TableFieldIDJsonTagName 配置表ID字段json标签名
-const TableFieldIDJsonTagName = "id"
-
 // TableMaxField 配置表字段上限
 const TableMaxField = 32767
 

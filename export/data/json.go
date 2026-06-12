@@ -4,39 +4,36 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
+
 	"github.com/godyy/gexcels"
+	"github.com/godyy/gexcels/export"
 	internal_define "github.com/godyy/gexcels/export"
 	"github.com/godyy/gexcels/internal/log"
 	"github.com/godyy/gexcels/internal/utils"
 	"github.com/godyy/gexcels/parse"
 	pkg_errors "github.com/pkg/errors"
-	"os"
-	"path/filepath"
-	"reflect"
 )
-
-// jsonOptions json导出选项
-type jsonOptions struct {
-}
-
-func (opts *jsonOptions) kind() internal_define.DataKind {
-	return internal_define.DataJson
-}
 
 // ExportJson 导出json格式配置表数据
 func ExportJson(p *parse.Parser, path string) error {
-	return doExport(p, path, &jsonOptions{})
+	if p == nil {
+		return ErrNoParserSpecified
+	}
+
+	if path == "" {
+		return ErrNoPathSpecified
+	}
+
+	return doExport(&jsonExporter{parser: p, path: path})
 }
 
 // jsonExporter json数据导出器
 type jsonExporter struct {
-	exporterBase
-}
-
-func createJsonExporter(p *parse.Parser, path string, options kindOptions) (exporter, error) {
-	return &jsonExporter{
-		exporterBase: newExporterBase(p, path),
-	}, nil
+	parser *parse.Parser
+	path   string
 }
 
 func (e *jsonExporter) kind() internal_define.DataKind {
@@ -45,6 +42,10 @@ func (e *jsonExporter) kind() internal_define.DataKind {
 
 func (e *jsonExporter) export() error {
 	log.Printf("export data json to [%s]", e.path)
+
+	if err := os.MkdirAll(e.path, os.ModePerm); err != nil {
+		return pkg_errors.WithMessagef(err, "mkdir")
+	}
 
 	for _, table := range e.parser.Tables {
 		if err := e.exportTableFile(table); err != nil {
@@ -91,7 +92,7 @@ func (e *jsonExporter) marshalJsonTableEntry(td *parse.Table, entry gexcels.Tabl
 			buf.WriteString(",")
 		}
 		if fd.Col == gexcels.TableColFieldID {
-			buf.WriteString(e.jsonFieldNamePrefix(gexcels.TableFieldIDJsonTagName))
+			buf.WriteString(e.jsonFieldNamePrefix(export.TableFieldIDJsonName))
 		} else {
 			buf.WriteString(e.jsonFieldNamePrefix(fd.Name))
 		}

@@ -7,6 +7,7 @@ const (
 	_         = DataKind(iota)
 	DataJson  // json
 	DataBytes // bytes
+	DataBson  // bson from mongo.
 	dataKindMax
 )
 
@@ -18,6 +19,7 @@ func (dk DataKind) Valid() bool {
 var dataKindStrings = [...]string{
 	DataJson:  "json",
 	DataBytes: "bytes",
+	DataBson:  "bson",
 }
 
 // String 转换为字符串
@@ -28,6 +30,7 @@ func (dk DataKind) String() string {
 var dataStringKinds = map[string]DataKind{
 	DataJson.String():  DataJson,
 	DataBytes.String(): DataBytes,
+	DataBson.String():  DataBson,
 }
 
 // FromString 从字符串转换
