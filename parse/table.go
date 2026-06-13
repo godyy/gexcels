@@ -3,14 +3,15 @@ package parse
 import (
 	"errors"
 	"fmt"
-	"github.com/godyy/gexcels"
-	"github.com/godyy/gexcels/internal/log"
-	pkg_errors "github.com/pkg/errors"
-	"github.com/tealeg/xlsx/v3"
 	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/godyy/gexcels"
+	"github.com/godyy/gexcels/internal/log"
+	pkg_errors "github.com/pkg/errors"
+	"github.com/tealeg/xlsx/v3"
 )
 
 // tableTagRegexp 配置表内标签匹配正则表达式
@@ -29,9 +30,9 @@ type Table struct {
 	Groups        []*TableGroup        // 分组
 }
 
-func newTable(tag gexcels.Tag, name, desc string, isGlobal bool) *Table {
+func newTable(name, desc string, isGlobal bool) *Table {
 	return &Table{
-		Table: gexcels.NewTable(tag, name, desc, isGlobal),
+		Table: gexcels.NewTable(name, desc, isGlobal),
 	}
 }
 
@@ -120,7 +121,7 @@ func (p *Parser) parseTableFile(info *tableFileInfo) error {
 		return err
 	}
 	for _, sheet := range file.Sheets {
-		td, err := p.parseTableOfSheet(sheet, info.tag)
+		td, err := p.parseTableOfSheet(sheet)
 		if err != nil {
 			if errors.Is(err, errSheetNameInvalid) {
 				continue
@@ -140,26 +141,26 @@ func (p *Parser) parseTableFile(info *tableFileInfo) error {
 var tableSheetNameRegexp = regexp.MustCompile(`^(.*)\|(` + gexcels.NamePattern + `)$`)
 
 // parseTableOfSheet 解析sheet中定义的配置表
-func (p *Parser) parseTableOfSheet(sheet *xlsx.Sheet, tag gexcels.Tag) (*Table, error) {
+func (p *Parser) parseTableOfSheet(sheet *xlsx.Sheet) (*Table, error) {
 	nameMatches := tableSheetNameRegexp.FindStringSubmatch(strings.TrimSpace(sheet.Name))
 	if len(nameMatches) <= 0 {
 		return nil, errSheetNameInvalid
 	}
 
 	if strings.HasPrefix(nameMatches[2], gexcels.GlobalTableNamePrefix) {
-		return p.parseGlobalTable(sheet, tag, nameMatches[2], nameMatches[1])
+		return p.parseGlobalTable(sheet, nameMatches[2], nameMatches[1])
 	} else {
-		return p.parseTable(sheet, tag, nameMatches[2], nameMatches[1])
+		return p.parseTable(sheet, nameMatches[2], nameMatches[1])
 	}
 }
 
 // parseTable 解析sheet中的配置表内容到td指定的配置表中
-func (p *Parser) parseTable(sheet *xlsx.Sheet, tag gexcels.Tag, name, desc string) (*Table, error) {
+func (p *Parser) parseTable(sheet *xlsx.Sheet, name, desc string) (*Table, error) {
 	if sheet.MaxRow < gexcels.TableRowFirstEntry || sheet.MaxCol < 1 {
 		return nil, errSheetRowsOrColsNotMatch
 	}
 
-	td := newTable(tag, name, desc, false)
+	td := newTable(name, desc, false)
 
 	// 解析字段
 	if err := p.parseTableFields(td, sheet); err != nil {
@@ -414,12 +415,12 @@ func (p *Parser) parseTableEntries(td *Table, sheet *xlsx.Sheet) error {
 }
 
 // parseGlobalTable 解析sheet中的global配置表到td
-func (p *Parser) parseGlobalTable(sheet *xlsx.Sheet, tag gexcels.Tag, name, desc string) (*Table, error) {
+func (p *Parser) parseGlobalTable(sheet *xlsx.Sheet, name, desc string) (*Table, error) {
 	if sheet.MaxRow < gexcels.GlobalTableSkipRows || sheet.MaxCol < gexcels.GlobalTableCols {
 		return nil, errSheetRowsOrColsNotMatch
 	}
 
-	td := newTable(tag, name, desc, true)
+	td := newTable(name, desc, true)
 	fieldCount := sheet.MaxRow - gexcels.GlobalTableSkipRows
 	td.Fields = make([]*gexcels.TableField, 0, fieldCount)
 	td.FieldByName = make(map[string]*gexcels.TableField, fieldCount)

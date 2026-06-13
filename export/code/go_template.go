@@ -6,7 +6,6 @@ import (
 
 	"github.com/godyy/gexcels"
 	"github.com/godyy/gexcels/export"
-	"github.com/godyy/gexcels/internal/utils"
 	"github.com/godyy/gexcels/parse"
 	pkg_errors "github.com/pkg/errors"
 )
@@ -21,7 +20,7 @@ var templateGoStruct = template.Must(template.New("go_struct").
 // GenStruct 生成结构体文本
 func (e *goExporter) GenStruct(sd *parse.Struct) string {
 	var sb strings.Builder
-	if err := templateGoStruct.Execute(&sb, map[string]interface{}{
+	if err := templateGoStruct.Execute(&sb, map[string]any{
 		"Exporter": e,
 		"Struct":   sd,
 	}); err != nil {
@@ -47,7 +46,7 @@ package {{.PkgName}}
 // GenStructsFile 生成go结构体文件文本
 func (e *goExporter) GenStructsFile() string {
 	var sb strings.Builder
-	if err := templateGoStructsFile.Execute(&sb, map[string]interface{}{
+	if err := templateGoStructsFile.Execute(&sb, map[string]any{
 		"Exporter": e,
 		"Structs":  e.parser.Structs,
 		"PkgName":  e.kindOptions.PkgName,
@@ -67,7 +66,7 @@ var templateGoEntryStruct = template.Must(template.New("go_struct").
 // GenEntryStruct 生成go配置表结构体文本
 func (e *goExporter) GenEntryStruct(td *parse.Table) string {
 	var sb strings.Builder
-	if err := templateGoEntryStruct.Execute(&sb, map[string]interface{}{
+	if err := templateGoEntryStruct.Execute(&sb, map[string]any{
 		"Exporter": e,
 		"Table":    td,
 	}); err != nil {
@@ -87,7 +86,7 @@ func (t *{{.Exporter.GetTableStructName .Table}}) {{$methodName}}({{.Field.Name}
 // GenTableUniqueKeyMethod 生成go配置表唯一键方法
 func (e *goExporter) GenTableUniqueKeyMethod(td *parse.Table, field *gexcels.TableField) string {
 	var sb strings.Builder
-	if err := templateGoTableUniqueKeyMethod.Execute(&sb, map[string]interface{}{
+	if err := templateGoTableUniqueKeyMethod.Execute(&sb, map[string]any{
 		"Exporter": e,
 		"Table":    td,
 		"Field":    field,
@@ -132,7 +131,7 @@ func (t *{{.Exporter.GetTableStructName .Table}}) {{$methodName}} (
 // GenTableCompositeKeyMethod 生成go配置表组合键方法
 func (e *goExporter) GenTableCompositeKeyMethod(td *parse.Table, ck *parse.TableCompositeKey) string {
 	var sb strings.Builder
-	if err := templateGoTableCompositeKeyMethod.Execute(&sb, map[string]interface{}{
+	if err := templateGoTableCompositeKeyMethod.Execute(&sb, map[string]any{
 		"Exporter":     e,
 		"Table":        td,
 		"CompositeKey": ck,
@@ -172,7 +171,7 @@ func (t *{{.Exporter.GetTableStructName .Table}}) {{$methodName}}(e *{{.Exporter
 // GenTableCompositeKeyInitMethod 生成go配置表组合键初始化方法
 func (e *goExporter) GenTableCompositeKeyInitMethod(td *parse.Table, ck *parse.TableCompositeKey) string {
 	var sb strings.Builder
-	if err := templateGoTableCompositeKeyInitMethod.Execute(&sb, map[string]interface{}{
+	if err := templateGoTableCompositeKeyInitMethod.Execute(&sb, map[string]any{
 		"Exporter":     e,
 		"Table":        td,
 		"CompositeKey": ck,
@@ -217,7 +216,7 @@ func (t *{{.Exporter.GetTableStructName .Table}}) {{$methodName}} (
 // GenTableGroupMethod 生成go配置表分组方法
 func (e *goExporter) GenTableGroupMethod(td *parse.Table, group *parse.TableGroup) string {
 	var sb strings.Builder
-	if err := templateGoTableGroupMethod.Execute(&sb, map[string]interface{}{
+	if err := templateGoTableGroupMethod.Execute(&sb, map[string]any{
 		"Exporter": e,
 		"Table":    td,
 		"Group":    group,
@@ -257,7 +256,7 @@ func (t *{{.Exporter.GetTableStructName .Table}}) {{$methodName}}(e *{{.Exporter
 // GenTableGroupInitMethod 生成go配置表分组初始化方法
 func (e *goExporter) GenTableGroupInitMethod(td *parse.Table, group *parse.TableGroup) string {
 	var sb strings.Builder
-	if err := templateGoTableGroupInitMethod.Execute(&sb, map[string]interface{}{
+	if err := templateGoTableGroupInitMethod.Execute(&sb, map[string]any{
 		"Exporter": e,
 		"Table":    td,
 		"Group":    group,
@@ -296,7 +295,7 @@ type {{$tableStructName}} struct {
 {{- end}}
 }
 
-func (t *{{.Exporter.GetTableStructName .Table}}) List() []*{{$entryStructName}} { return t.entries }
+func (t *{{.Exporter.GetTableStructName .Table}}) All() []*{{$entryStructName}} { return t.entries }
 
 {{$hasUnique := false -}}
 {{range $index, $field := .Table.Fields -}}
@@ -316,10 +315,6 @@ func (t *{{.Exporter.GetTableStructName .Table}}) List() []*{{$entryStructName}}
 {{if $index}}{{"\n\n"}}{{end -}}
 {{$.Exporter.GenTableGroupMethod $.Table $group}}
 {{- end}}
-
-func (t *{{$tableStructName}}) name() string {
-	return "{{.Exporter.GetTableName .Table}}"
-}
 
 {{.Exporter.GenTableLoadDataMethod .Table}}
 
@@ -362,7 +357,7 @@ func (t *{{$tableStructName}}) init() {
 {{$.Exporter.GenTableGroupInitMethod $.Table $group}}
 {{- end}}
 
-func new{{$tableStructName}}() *{{$tableStructName}} {
+func new{{.Exporter.GetTableStructExportName .Table}}() *{{$tableStructName}} {
 	return &{{$tableStructName}} {
 {{$hasUnique := false -}}
 {{range $index, $field := .Table.Fields -}}
@@ -387,7 +382,7 @@ func new{{$tableStructName}}() *{{$tableStructName}} {
 // GenNormalTableFile 生成go常规配置表代码文本
 func (e *goExporter) GenNormalTableFile(td *parse.Table) string {
 	var sb strings.Builder
-	if err := templateGoNormalTableFile.Execute(&sb, map[string]interface{}{
+	if err := templateGoNormalTableFile.Execute(&sb, map[string]any{
 		"Exporter": e,
 		"Table":    td,
 		"PkgName":  e.kindOptions.PkgName,
@@ -413,13 +408,9 @@ type {{$tableStructName}} struct {
 {{- end}}
 }
 
-func (t *{{$tableStructName}}) name() string {
-  	return "{{.Exporter.GetTableName .Table}}"
-}
-
 {{.Exporter.GenTableLoadDataMethod .Table}}
 
-func new{{$tableStructName}}() *{{$tableStructName}} {
+func new{{$.Exporter.GetTableStructExportName .Table}}() *{{$tableStructName}} {
 	return &{{$tableStructName}}{}
 }
 `))
@@ -427,7 +418,7 @@ func new{{$tableStructName}}() *{{$tableStructName}} {
 // GenGlobalTableFile 生成go全局配置表代码文本
 func (e *goExporter) GenGlobalTableFile(td *parse.Table) string {
 	var sb strings.Builder
-	if err := templateGoGlobalTableFile.Execute(&sb, map[string]interface{}{
+	if err := templateGoGlobalTableFile.Execute(&sb, map[string]any{
 		"Exporter": e,
 		"Table":    td,
 		"PkgName":  e.kindOptions.PkgName,
@@ -437,357 +428,203 @@ func (e *goExporter) GenGlobalTableFile(td *parse.Table) string {
 	return sb.String()
 }
 
-// templateGoTableMgrLoadMethod go配置表管理器加载方法模版
-var templateGoTableMgrLoadMethod = template.Must(template.New("go_table_mgr_load_method").
-	Parse(`// tableDataInfo 配置表数据
-type tableDataInfo struct {
-	filename string      // 文件名
-	data     []byte      // 数据
-	tag      gexcels.Tag // 标签
-}
-
-// ReloadData 重载所有数据
-func (m *{{.ExportedManagerName}}) ReloadData(data map[string][]byte, tags ...gexcels.Tag) error {
-	if len(data) == 0 {
-		return errors.New("test: there is nothing to reload")
-	}
-
-	tagMap, err := createTagMap(tags)
-	if err != nil {
-		return err
-	}
-
-	mm := new{{.ManagerName}}()
-	tables := registerTables(mm)
-	tableDatas := make(map[string]*tableDataInfo)
-
-	for fileName, data := range data {
-		tableName, tag, err := parseTableFileName(fileName)
-		if err != nil {
-			return pkg_errors.WithMessage(err, "test")
-		}
-
-		if !tagMap.match(tag) {
-			continue
-		}
-
-		if table := tables[tableName]; table == nil {
-			return fmt.Errorf("test: table[%s] not exist", tableName)
-		}
-
-		if tableData := tableDatas[tableName]; tableData == nil {
-			tableData = &tableDataInfo{
-				filename: fileName,
-				data:     data,
-				tag:      tag,
-			}
-			tableDatas[tableName] = tableData
-		} else if tagMap.compareTag(tag, tableData.tag) {
-			tableData.filename = fileName
-			tableData.data = data
-			tableData.tag = tag
-		}
-	}
-
-	for tableName, tableData := range tableDatas {
-		table := tables[tableName]
-		if err := table.loadData(tableData.data); err != nil {
-			return pkg_errors.WithMessagef(err, "test: load table[%s] data", tableData.filename)
-		}
-	}
-
-	m.set(mm)
-	return nil
-}
-
-// tableFileInfo 配置表文件
-type tableFileInfo struct {
-	path string      // 路径
-	tag  gexcels.Tag // 标签
-}
-
-// ReloadDir 从文件夹重载数据
-func (m *{{.ExportedManagerName}}) ReloadDir(dir string, tags ...gexcels.Tag) error {
-	tagMap, err := createTagMap(tags)
-	if err != nil {
-		return err
-	}
-
-	mm := new{{.ManagerName}}()
-	tables := registerTables(mm)
-	tableFiles := make(map[string]*tableFileInfo)
-
-	ext := "{{.Ext}}"
-	if err := filepath.Walk(dir, func(path string, info fs.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if info.IsDir() || filepath.Ext(info.Name()) != ext {
-			return nil
-		}
-
-		fileName := strings.TrimSuffix(filepath.Base(path), ext)
-		tableName, tag, err := parseTableFileName(fileName)
-		if err != nil {
-			return err
-		}
-
-		if !tagMap.match(tag) {
-			return nil
-		}
-
-		if table := tables[tableName]; table == nil {
-			return fmt.Errorf("table[%s] not exist", tableName)
-		}
-
-		if tableFile := tableFiles[tableName]; tableFile == nil {
-			tableFile = &tableFileInfo{
-				path: path,
-				tag:  tag,
-			}
-			tableFiles[tableName] = tableFile
-		} else if tagMap.compareTag(tag, tableFile.tag) {
-			tableFile.path = path
-			tableFile.tag = tag
-		}
-
-		return nil
-	}); err != nil {
-		return pkg_errors.WithMessage(err, "test")
-	}
-
-	for tableName, tableFile := range tableFiles {
-		data, err := os.ReadFile(tableFile.path)
-		if err != nil {
-			return pkg_errors.WithMessagef(err, "read table file [%s]", tableName)
-		}
-		table := tables[tableName]
-		if err := table.loadData(data); err != nil {
-			return pkg_errors.WithMessagef(err, "load table file [%s] data", tableName)
-		}
-	}
-
-	m.set(mm)
-	return nil
-}
-	`))
-
-// templateGoTableMgrBsonLoadMethod go配置表管理器bson加载方法模版
-var templateGoTableMgrBsonLoadMethod = template.Must(template.New("go_table_mgr_bson_load_method").
-	Parse(`// Reload 重载数据
-func (m *{{.ExportedManagerName}}) Reload(db *mongoDB) error {
-	mm := new{{.ManagerName}}()
-	tables := registerTables(mm)
-
-	for _, table := range tables {
-		if err := table.loadData(db); err != nil {
-			return err
-		}
-	}
-
-	m.set(mm)
-	return nil
-}
-`))
-
-// GenTableMgrLoadMethod 生成go配置表管理器加载方法代码文本
-func (e *goExporter) GenTableMgrLoadMethod() string {
-	if e.options.DataKind == export.DataBson {
-		var sb strings.Builder
-		if err := templateGoTableMgrBsonLoadMethod.Execute(&sb, map[string]interface{}{
-			"ExportedManagerName": e.options.TableManagerName,
-			"ManagerName":         utils.CamelCase(e.options.TableManagerName),
-		}); err != nil {
-			panic(pkg_errors.WithMessage(err, "export code: go: GenTableMgrBsonLoadMethod"))
-		}
-		return sb.String()
-	} else {
-		var sb strings.Builder
-		if err := templateGoTableMgrLoadMethod.Execute(&sb, map[string]interface{}{
-			"ExportedManagerName": e.options.TableManagerName,
-			"Ext":                 "." + e.options.DataKind.String(),
-			"ManagerName":         utils.CamelCase(e.options.TableManagerName),
-		}); err != nil {
-			panic(pkg_errors.WithMessage(err, "export code: go: GenTableMgrLoadMethod"))
-		}
-		return sb.String()
-	}
-}
-
-// GenTableInterface 生成go配置表接口代码文本
-func (e *goExporter) GenTableInterface() string {
-	if e.options.DataKind == export.DataBson {
-		return `// table 配置表接口抽象
-type table interface{
-	name() string 				// 配置表名
-	loadData(db *mongoDB) error // 数据加载
-}`
-	} else {
-		return `// table 配置表接口抽象
-type table interface{
-	name() string 				// 配置表名
-	loadData(data []byte) error // 数据加载
-}`
-	}
-}
-
-// templateGoTableMgrFile go配置表管理器文件模版
-var templateGoTableMgrFile = template.Must(template.New("go_table_mgr_file").
+// templateGoLoadFile go配置表加载文件模版
+var templateGoLoadFile = template.Must(template.New("go_load_file").
 	Parse(`// Code generated by gexcels; DO NOT EDIT.
 // This file was automatically generated and may be overwritten.
 
 package {{.PkgName}}
 
 import (
-	"errors"
 	"fmt"
-	"github.com/godyy/gexcels"
-	pkg_errors "github.com/pkg/errors"
-	"io/fs"
-	"os"
-	"path/filepath"
-	"regexp"
-	"strings"
 	"sync/atomic"
-	"unsafe"
 )
 
-// tagMap 标签映射
-// key 为标签值
-// value 为标签优先级, 值越小优先级越高
-type tagMap map[gexcels.Tag]int
-
-// match 匹配标签
-func (tm *tagMap) match(tag gexcels.Tag) bool {
-	_, ok := (*tm)[gexcels.TagAny]
-	if !ok {
-		_, ok = (*tm)[tag]
-	}
-	return ok
-}
-
-// compareTag 比较 tag1 和 tag2，返回 tag1 的优先级是否高于 tag2
-func (tm *tagMap) compareTag(tag1, tag2 gexcels.Tag) bool {
-	i1, ok1 := (*tm)[tag1]
-	i2, ok2 := (*tm)[tag2]
-	if ok1 && ok2 {
-		return i1 < i2
-	}
-	if ok1 {
-		return true
-	}
-	if ok2 {
-		return false
-	}
-	return strings.Compare(string(tag1), string(tag2)) > 0
-}
-
-// createTagMap 创建标签映射
-// 当同一标签重复指定时，以优先级最高者为准
-func createTagMap(tags []gexcels.Tag) (tagMap, error) {
-	tm := make(tagMap, len(tags))
-	for i, tag := range tags {
-		if !tag.Valid() {
-			return nil, fmt.Errorf("test: tag %s invalid", tag)
+// Load 加载所有配置表
+func Load(basePath string) error {
+	for _, f := range loadFuncs {
+		if err := f(basePath); err != nil {
+			return err
 		}
-		if _, ok := tm[tag]; ok {
-			continue
-		}
-		tm[tag] = i
 	}
-	if len(tm) == 0 {
-		tm[gexcels.TagEmpty] = 0
+	return nil
+}
+
+// LoadTable 加载指定配置表
+func LoadTable(basePath string, tableName string) error {
+	if load, ok := loadFuncMap[tableName]; ok {
+		return load(basePath)
 	}
-	return tm, nil
+	return fmt.Errorf("table[%s] load func not registered", tableName)
 }
 
-// tableFileNameRegexp 表文件名正则表达式
-var tableFileNameRegexp = regexp.MustCompile(` + "`(" + gexcels.NamePattern + `)(?:\.(` + gexcels.TagPattern + `))?` + "`" + `)
-
-// parseTableFileName 解析配置表文件名
-func parseTableFileName(fileName string) (string, gexcels.Tag, error) {
-	matches := tableFileNameRegexp.FindStringSubmatch(fileName)
-	if len(matches) != 3 {
-		return "", "", fmt.Errorf("table file name %s invalid", fileName)
-	}
-	if !gexcels.Tag(matches[2]).Valid() {
-		return "", "", fmt.Errorf("table file name %s tag invalid", fileName)
-	}
-	return matches[1], gexcels.Tag(matches[2]), nil
-}
-
-// {{.ExportedManagerName}} 配置表管理器
-type {{.ExportedManagerName}} struct {
-	*{{.ManagerName}}
-}
-
-func New{{.ExportedManagerName}}() *{{.ExportedManagerName}} {
-	return &{{.ExportedManagerName}}{}
-}
-
-func (m *{{.ExportedManagerName}}) set(mm *{{.ManagerName}}) {
-	atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&m.{{.ManagerName}})), unsafe.Pointer(mm))
-}
-
-{{$.Exporter.GenTableMgrLoadMethod}}
-
-{{$.Exporter.GenTableInterface}}
-
-// {{.ManagerName}} 封装管理器数据
-type {{.ManagerName}} struct {
+var (
 {{range $index, $table := .Tables -}}
 {{if $index}}{{"\n"}}{{end -}}
-	{{"\t"}}{{$.Exporter.GenMgrTableFieldName $table}} *{{$.Exporter.GetTableStructName $table}} // {{$table.Desc}}
+	ap{{$.Exporter.GetTableStructExportName $table}} atomic.Pointer[{{$.Exporter.GetTableStructName $table}}] // {{$table.Desc}}
 {{- end}}
-}
+)
 
-func new{{.ManagerName}}() *{{.ManagerName}} {
-	return new({{.ManagerName}})
-}
-
-{{range $index, $table := .Tables -}}
-{{if $index}}{{"\n\n"}}{{end -}}
-{{$methodName := $.Exporter.GenMgrTableMethodName $table -}}
-// {{$methodName}} {{$table.Desc}}
-func (m *{{$.ManagerName}}) {{$methodName}}() *{{$.Exporter.GetTableStructName $table}} { return m.{{$.Exporter.GenMgrTableFieldName $table}} }
-{{- end}}
-
-// registerTables 注册配置表
-func registerTables(m *{{.ManagerName}}) map[string]table {
-	tables := make(map[string]table, {{len .Tables}})
 {{range $index, $table := .Tables -}}
 {{if $index}}{{"\n"}}{{end -}}
-	{{"\t"}}// {{$table.Desc -}}
-{{$fieldName := $.Exporter.GenMgrTableFieldName $table}}
-	m.{{$fieldName}} = new{{$.Exporter.GetTableStructName $table}}()
-	tables[m.{{$fieldName}}.name()] = m.{{$fieldName}}
+// {{$.Exporter.GetTableStructExportName $table}} {{$table.Desc}}
+func {{$.Exporter.GetTableStructExportName $table}}() *{{$.Exporter.GetTableStructName $table}} {
+	return ap{{$.Exporter.GetTableStructExportName $table}}.Load()
+}
 {{- end}}
-	return tables
+
+// loadFunc 配置表加载函数
+type loadFunc func(basePath string) error
+// loadFuncs 配置表加载函数列表
+var loadFuncs []loadFunc
+// loadFuncMap 配置表加载函数映射
+var loadFuncMap map[string]loadFunc
+
+// registerLoadFunc 注册配置表加载函数
+func registerLoadFunc(tableName string, f loadFunc) {
+	if _, ok := loadFuncMap[tableName]; ok {
+		panic(fmt.Errorf("table[%s] load func already registered", tableName))
+	}
+	loadFuncMap[tableName] = f
+	loadFuncs = append(loadFuncs, f)
+}
+
+// registerAllLoadFuncs 注册所有配置表加载函数
+func registerAllLoadFuncs() {
+	loadFuncs = make([]loadFunc, 0, {{.Exporter.GetTableAmount}})
+	loadFuncMap = make(map[string]loadFunc, {{.Exporter.GetTableAmount}})
+{{range $index, $table := .Tables -}}
+{{if $index}}{{"\n"}}{{end -}}
+	registerLoadFunc("{{$table.Name}}", func (basePath string) error {
+		t := new{{$.Exporter.GetTableStructExportName $table}}()
+		if err := t.load(basePath); err != nil {
+			return err
+		}
+		ap{{$.Exporter.GetTableStructExportName $table}}.Store(t)
+		return nil
+	})
+{{- end}}
+}
+
+func init() {
+	registerAllLoadFuncs()
 }
 `))
 
-// GenTableMgrFile 生成go配置表管理器代码文本
-func (e *goExporter) GenTableMgrFile() string {
-	var sb strings.Builder
-	if err := templateGoTableMgrFile.Execute(&sb, map[string]interface{}{
-		"Exporter":            e,
-		"PkgName":             e.kindOptions.PkgName,
-		"ExportedManagerName": e.options.TableManagerName,
-		"Tables":              e.parser.Tables,
-		"Ext":                 "." + e.options.DataKind.String(),
-		"ManagerName":         utils.CamelCase(e.options.TableManagerName),
-	}); err != nil {
-		panic(pkg_errors.WithMessage(err, "export code: go: GenTableMgrFile"))
+// templateGoBsonLoadFile go bson 配置表加载文件模版
+var templateGoBsonLoadFile = template.Must(template.New("go_bson_load_file").
+	Parse(`// Code generated by gexcels; DO NOT EDIT.
+// This file was automatically generated and may be overwritten.
+
+package {{.PkgName}}
+
+import (
+	"fmt"
+	"sync/atomic"
+)
+
+// Load 加载所有配置表
+func Load(db *MongoDB) error {
+	for _, f := range loadFuncs {
+		if err := f(db); err != nil {
+			return err
+		}
 	}
-	return sb.String()
+	return nil
+}
+
+// LoadTable 加载指定配置表
+func LoadTable(db *MongoDB, tableName string) error {
+	f, ok := loadFuncMap[tableName]
+	if !ok {
+		return fmt.Errorf("table[%s] load func not registered", tableName)
+	}
+	return f(db)
+}
+
+var (
+{{range $index, $table := .Tables -}}
+{{if $index}}{{"\n"}}{{end -}}
+	ap{{$.Exporter.GetTableStructExportName $table}} atomic.Pointer[{{$.Exporter.GetTableStructName $table}}] // {{$table.Desc}}
+{{- end}}
+)
+
+{{range $index, $table := .Tables -}}
+{{if $index}}{{"\n"}}{{end -}}
+// {{$.Exporter.GetTableStructExportName $table}} {{$table.Desc}}
+func {{$.Exporter.GetTableStructExportName $table}}() *{{$.Exporter.GetTableStructName $table}} {
+	return ap{{$.Exporter.GetTableStructExportName $table}}.Load()
+}
+{{- end}}
+
+// loadFunc 配置表加载函数
+type loadFunc func(*MongoDB) error
+// loadFuncs 配置表加载函数列表
+var loadFuncs []loadFunc
+// loadFuncMap 配置表加载函数映射
+var loadFuncMap map[string]loadFunc
+
+// registerLoadFunc 注册配置表加载函数
+func registerLoadFunc(tableName string, f loadFunc) {
+	if _, ok := loadFuncMap[tableName]; ok {
+		panic(fmt.Errorf("table[%s] load func already registered", tableName))
+	}
+	loadFuncMap[tableName] = f
+	loadFuncs = append(loadFuncs, f)
+}
+
+// registerAllLoadFuncs 注册所有配置表加载函数
+func registerAllLoadFuncs() {
+	loadFuncs = make([]loadFunc, 0, {{.Exporter.GetTableAmount}})
+	loadFuncMap = make(map[string]loadFunc, {{.Exporter.GetTableAmount}})
+	{{range $index, $table := .Tables -}}
+{{if $index}}{{"\n"}}{{end -}}
+	registerLoadFunc("{{$table.Name}}", func (db *MongoDB) error {
+		t := new{{$.Exporter.GetTableStructExportName $table}}()
+		if err := t.load(db); err != nil {
+			return err
+		}
+		ap{{$.Exporter.GetTableStructExportName $table}}.Store(t)
+		return nil
+	})
+{{- end}}
+}
+
+func init() {
+	registerAllLoadFuncs()
+}
+`))
+
+// GenLoadFile 生成go配置表加载文件代码文本
+func (e *goExporter) GenLoadFile() string {
+	if e.options.DataKind == export.DataBson {
+		var sb strings.Builder
+		if err := templateGoBsonLoadFile.Execute(&sb, map[string]any{
+			"Exporter": e,
+			"PkgName":  e.kindOptions.PkgName,
+			"Tables":   e.parser.Tables,
+		}); err != nil {
+			panic(pkg_errors.WithMessage(err, "export code: go: GenLoadFile Bson"))
+		}
+		return sb.String()
+	} else {
+		var sb strings.Builder
+		if err := templateGoLoadFile.Execute(&sb, map[string]any{
+			"Exporter": e,
+			"PkgName":  e.kindOptions.PkgName,
+			"Tables":   e.parser.Tables,
+		}); err != nil {
+			panic(pkg_errors.WithMessage(err, "export code: go: GenLoadFile"))
+		}
+		return sb.String()
+	}
 }
 
 // templateGoNormalTableLoadJson go常规配置表json加载模版
 var templateGoNormalTableLoadJson = template.Must(template.New("go_normal_table_load_json").
-	Parse(`// loadData 加载json
-func (t *{{.Exporter.GetTableStructName .Table}}) loadData(data []byte) error {
-	if err := loadHelper.decodeJson(data, &t.entries); err != nil {
+	Parse(`// load 加载数据
+func (t *{{.Exporter.GetTableStructName .Table}}) load(basePath string) error {
+	if err := loadHelper.load(basePath, "{{.Table.Name}}", &t.entries); err != nil {
 		return err
 	}
 	t.init()
@@ -797,7 +634,7 @@ func (t *{{.Exporter.GetTableStructName .Table}}) loadData(data []byte) error {
 // GenNormalTableLoadJson 生成go常规配置表json加载代码
 func (e *goExporter) GenNormalTableLoadJson(td *parse.Table) string {
 	var sb strings.Builder
-	if err := templateGoNormalTableLoadJson.Execute(&sb, map[string]interface{}{
+	if err := templateGoNormalTableLoadJson.Execute(&sb, map[string]any{
 		"Exporter": e,
 		"Table":    td,
 	}); err != nil {
@@ -808,15 +645,15 @@ func (e *goExporter) GenNormalTableLoadJson(td *parse.Table) string {
 
 // templateGoGlobalTableLoadJson go全局配置表json加载模版
 var templateGoGlobalTableLoadJson = template.Must(template.New("go_global_table_load_json").
-	Parse(`// loadData 加载json
-func (t *{{.Exporter.GetTableStructName .Table}}) loadData(data []byte) error {
-	return loadHelper.decodeJson(data, t)
+	Parse(`// load 加载数据
+func (t *{{.Exporter.GetTableStructName .Table}}) load(basePath string) error {
+	return loadHelper.load(basePath, "{{.Table.Name}}", t)
 }`))
 
 // GenGlobalTableLoadJson 生成go全局配置表json加载代码
 func (e *goExporter) GenGlobalTableLoadJson(td *parse.Table) string {
 	var sb strings.Builder
-	if err := templateGoGlobalTableLoadJson.Execute(&sb, map[string]interface{}{
+	if err := templateGoGlobalTableLoadJson.Execute(&sb, map[string]any{
 		"Exporter": e,
 		"Table":    td,
 	}); err != nil {
@@ -834,13 +671,24 @@ package {{.PkgName}}
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 )
 
 type jsonLoadHelper struct{}
 
 var loadHelper = &jsonLoadHelper{}
 
-func (jh *jsonLoadHelper) decodeJson(data []byte, v interface{}) error {
+func (h *jsonLoadHelper) load(basePath string, tableName string, v any) error {
+	filePath := filepath.Join(basePath, tableName)
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return err
+	}
+	return h.decodeJson(data, v)
+}
+
+func (h *jsonLoadHelper) decodeJson(data []byte, v any) error {
 	return json.Unmarshal(data, v)
 }
 `))
@@ -848,7 +696,7 @@ func (jh *jsonLoadHelper) decodeJson(data []byte, v interface{}) error {
 // GenJsonLoadHelperFile 生成go配置表json加载帮助代码
 func (e *goExporter) GenJsonLoadHelperFile() string {
 	var sb strings.Builder
-	if err := templateGoJsonLoadHelperFile.Execute(&sb, map[string]interface{}{
+	if err := templateGoJsonLoadHelperFile.Execute(&sb, map[string]any{
 		"PkgName": e.kindOptions.PkgName,
 	}); err != nil {
 		panic(pkg_errors.WithMessage(err, "export code: go: GenJsonLoadHelperFile"))
@@ -858,9 +706,9 @@ func (e *goExporter) GenJsonLoadHelperFile() string {
 
 // templateGoNormalLoadBytes go常规配置表bytes加载模版
 var templateGoNormalLoadBytes = template.Must(template.New("go_normal_table_load_bytes").
-	Parse(`// loadData 加载bytes
-func (t *{{.Exporter.GetTableStructName .Table}}) loadData(data []byte) error {
-	if err := loadHelper.decodeEntries(data, &t.entries); err != nil {
+	Parse(`// load 加载数据
+func (t *{{.Exporter.GetTableStructName .Table}}) load(basePath string) error {
+	if err := loadHelper.load(basePath, "{{.Table.Name}}", &t.entries); err != nil {
 		return err
 	}
 	t.init()
@@ -870,7 +718,7 @@ func (t *{{.Exporter.GetTableStructName .Table}}) loadData(data []byte) error {
 // GenNormalTableLoadBytes 生成go常规配置表bytes加载代码
 func (e *goExporter) GenNormalTableLoadBytes(td *parse.Table) string {
 	var sb strings.Builder
-	if err := templateGoNormalLoadBytes.Execute(&sb, map[string]interface{}{
+	if err := templateGoNormalLoadBytes.Execute(&sb, map[string]any{
 		"Exporter": e,
 		"Table":    td,
 	}); err != nil {
@@ -881,15 +729,15 @@ func (e *goExporter) GenNormalTableLoadBytes(td *parse.Table) string {
 
 // templateGoGlobalLoadBytes go全局配置表bytes加载模版
 var templateGoGlobalLoadBytes = template.Must(template.New("go_global_table_load_bytes").
-	Parse(`// loadData 加载bytes
-func (t *{{.Exporter.GetTableStructName .Table}}) loadData(data []byte) error {
-	return loadHelper.decodeGlobal(data, t)
+	Parse(`// load 加载数据
+func (t *{{.Exporter.GetTableStructName .Table}}) load(basePath string) error {
+	return loadHelper.load(basePath, "{{.Table.Name}}", t)
 }`))
 
 // GenGlobalTableLoadBytes 生成go全局配置表bytes加载代码
 func (e *goExporter) GenGlobalTableLoadBytes(td *parse.Table) string {
 	var sb strings.Builder
-	if err := templateGoGlobalLoadBytes.Execute(&sb, map[string]interface{}{
+	if err := templateGoGlobalLoadBytes.Execute(&sb, map[string]any{
 		"Exporter": e,
 		"Table":    td,
 	}); err != nil {
@@ -900,9 +748,9 @@ func (e *goExporter) GenGlobalTableLoadBytes(td *parse.Table) string {
 
 // templateGoNormalLoadBson go常规配置表bson加载模版
 var templateGoNormalLoadBson = template.Must(template.New("go_normal_table_load_bson").
-	Parse(`// loadData 加载bson
-func (t *{{.Exporter.GetTableStructName .Table}}) loadData(db *mongoDB) error {
-	if err := loadNormalBson(db, t.name(), &t.entries); err != nil {
+	Parse(`// load 加载数据
+func (t *{{.Exporter.GetTableStructName .Table}}) load(db *MongoDB) error {
+	if err := loadNormal(db, "{{.Table.Name}}", &t.entries); err != nil {
 		return err
 	}
 	t.init()
@@ -912,7 +760,7 @@ func (t *{{.Exporter.GetTableStructName .Table}}) loadData(db *mongoDB) error {
 // GenNormalTableLoadBson 生成go常规配置表bson加载代码
 func (e *goExporter) GenNormalTableLoadBson(td *parse.Table) string {
 	var sb strings.Builder
-	if err := templateGoNormalLoadBson.Execute(&sb, map[string]interface{}{
+	if err := templateGoNormalLoadBson.Execute(&sb, map[string]any{
 		"Exporter": e,
 		"Table":    td,
 	}); err != nil {
@@ -923,15 +771,15 @@ func (e *goExporter) GenNormalTableLoadBson(td *parse.Table) string {
 
 // templateGoGlobalLoadBson go全局配置表bson加载模版
 var templateGoGlobalLoadBson = template.Must(template.New("go_global_table_load_bson").
-	Parse(`// loadData 加载bson
-func (t *{{.Exporter.GetTableStructName .Table}}) loadData(db *mongoDB) error {
-	return loadGlobalBson(db, t.name(), t)
+	Parse(`// load 加载数据
+func (t *{{.Exporter.GetTableStructName .Table}}) load(db *MongoDB) error {
+	return loadGlobal(db, "{{.Table.Name}}", t)
 }`))
 
 // GenGlobalTableLoadBson 生成go全局配置表bson加载代码
 func (e *goExporter) GenGlobalTableLoadBson(td *parse.Table) string {
 	var sb strings.Builder
-	if err := templateGoGlobalLoadBson.Execute(&sb, map[string]interface{}{
+	if err := templateGoGlobalLoadBson.Execute(&sb, map[string]any{
 		"Exporter": e,
 		"Table":    td,
 	}); err != nil {
@@ -953,7 +801,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"reflect"
+
 	"github.com/godyy/gutils/buffer/bytes"
 	pkg_errors "github.com/pkg/errors"
 )
@@ -962,11 +813,20 @@ var loadHelper = &bytesLoadHelper{}
 
 type bytesLoadHelper struct{}
 
-func (bh *bytesLoadHelper) decodeFieldIndex(buf *bytes.Buffer) (int16, error) {
+func (h *bytesLoadHelper) load(basePath string, tableName string, v any) error {
+	filePath := filepath.Join(basePath, tableName)
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return err
+	}
+	return h.decodeEntries(data, v)
+}
+
+func (h *bytesLoadHelper) decodeFieldIndex(buf *bytes.Buffer) (int16, error) {
 	return buf.ReadVarint16()
 }
 
-func (bh *bytesLoadHelper) loadLine(dataBuf *bufio.Reader, lineBuf *bytes.Buffer) error {
+func (h *bytesLoadHelper) loadLine(dataBuf *bufio.Reader, lineBuf *bytes.Buffer) error {
 	var (
 		line, l  []byte
 		isPrefix bool
@@ -996,13 +856,13 @@ func (bh *bytesLoadHelper) loadLine(dataBuf *bufio.Reader, lineBuf *bytes.Buffer
 	return nil
 }
 
-func (bh *bytesLoadHelper) decodeEntries(data []byte, val interface{}) error {
+func (h *bytesLoadHelper) decodeEntries(data []byte, val interface{}) error {
 	var (
 		dataBuf = bufio.NewReader(bytes.NewBuffer(data))
 		lineBuf bytes.Buffer
 	)
 
-	if err := bh.loadLine(dataBuf, &lineBuf); err != nil {
+	if err := h.loadLine(dataBuf, &lineBuf); err != nil {
 		if errors.Is(err, io.EOF) {
 			return nil
 		}
@@ -1023,11 +883,11 @@ func (bh *bytesLoadHelper) decodeEntries(data []byte, val interface{}) error {
 	entryType := arrayType.Elem()
 	entryArray := reflect.MakeSlice(arrayType, 0, int(n))
 	for i := int32(0); i < n; i++ {
-		if err := bh.loadLine(dataBuf, &lineBuf); err != nil {
+		if err := h.loadLine(dataBuf, &lineBuf); err != nil {
 			return pkg_errors.WithMessagef(err, "load entry[%d] line", i)
 		}
 		entry := reflect.New(entryType.Elem())
-		if err := bh.decodeValue(&lineBuf, entry.Elem()); err != nil {
+		if err := h.decodeValue(&lineBuf, entry.Elem()); err != nil {
 			return pkg_errors.WithMessagef(err, "load entry[%d]", i)
 		}
 		entryArray = reflect.Append(entryArray, entry)
@@ -1037,7 +897,7 @@ func (bh *bytesLoadHelper) decodeEntries(data []byte, val interface{}) error {
 	return nil
 }
 
-func (bh *bytesLoadHelper) decodeGlobal(data []byte, val interface{}) error {
+func (h *bytesLoadHelper) decodeGlobal(data []byte, val interface{}) error {
 	var (
 		dataBuf = bufio.NewReader(bytes.NewBuffer(data))
 		lineBuf bytes.Buffer
@@ -1047,18 +907,18 @@ func (bh *bytesLoadHelper) decodeGlobal(data []byte, val interface{}) error {
 	n := v.NumField()
 	i := 0
 	for {
-		if err := bh.loadLine(dataBuf, &lineBuf); err != nil {
+		if err := h.loadLine(dataBuf, &lineBuf); err != nil {
 			if errors.Is(err, io.EOF) {
 				break
 			}
 			return pkg_errors.WithMessagef(err, "load line[%d]", i)
 		}
-		index, err := bh.decodeFieldIndex(&lineBuf)
+		index, err := h.decodeFieldIndex(&lineBuf)
 		if err != nil {
 			return pkg_errors.WithMessage(err, "load field index")
 		}
 		field := v.Field(int(index - 1))
-		if err := bh.decodeValue(&lineBuf, field); err != nil {
+		if err := h.decodeValue(&lineBuf, field); err != nil {
 			return pkg_errors.WithMessagef(err, "load field[%d]", index-1)
 		}
 		i++
@@ -1070,7 +930,7 @@ func (bh *bytesLoadHelper) decodeGlobal(data []byte, val interface{}) error {
 	return nil
 }
 
-func (bh *bytesLoadHelper) decodeValue(buf *bytes.Buffer, v reflect.Value) (err error) {
+func (h *bytesLoadHelper) decodeValue(buf *bytes.Buffer, v reflect.Value) (err error) {
 	switch v.Kind() {
 	case reflect.Int32: // FTInt32
 		var i32 int32
@@ -1109,16 +969,16 @@ func (bh *bytesLoadHelper) decodeValue(buf *bytes.Buffer, v reflect.Value) (err 
 			v.SetString(s)
 		}
 	case reflect.Ptr, reflect.Struct: // FTStruct
-		err = bh.decodeStruct(buf, v)
+		err = h.decodeStruct(buf, v)
 	case reflect.Slice: // FTArray
-		err = bh.decodeArray(buf, v)
+		err = h.decodeArray(buf, v)
 	default:
 		panic(fmt.Sprintf("bytesLoadHelper: decodeValue: unsupported value: %v", v.String()))
 	}
 	return err
 }
 
-func (bh *bytesLoadHelper) decodeStruct(buf *bytes.Buffer, s reflect.Value) error {
+func (h *bytesLoadHelper) decodeStruct(buf *bytes.Buffer, s reflect.Value) error {
 	var (
 		v     reflect.Value
 		index int16
@@ -1135,7 +995,7 @@ func (bh *bytesLoadHelper) decodeStruct(buf *bytes.Buffer, s reflect.Value) erro
 
 	n := v.NumField()
 	for {
-		index, err = bh.decodeFieldIndex(buf)
+		index, err = h.decodeFieldIndex(buf)
 		if err != nil {
 			if err == io.EOF {
 				break
@@ -1146,7 +1006,7 @@ func (bh *bytesLoadHelper) decodeStruct(buf *bytes.Buffer, s reflect.Value) erro
 			break
 		}
 		field := v.Field(int(index - 1))
-		if err = bh.decodeValue(buf, field); err != nil {
+		if err = h.decodeValue(buf, field); err != nil {
 			return pkg_errors.WithMessagef(err, "load field[%d]", index)
 		}
 		if int(index) >= n {
@@ -1157,7 +1017,7 @@ func (bh *bytesLoadHelper) decodeStruct(buf *bytes.Buffer, s reflect.Value) erro
 	return nil
 }
 
-func (bh *bytesLoadHelper) decodeArrayLength(buf *bytes.Buffer) (int, error) {
+func (h *bytesLoadHelper) decodeArrayLength(buf *bytes.Buffer) (int, error) {
 	arrayLen, err := buf.ReadVarint16()
 	if err != nil {
 		return 0, pkg_errors.WithMessage(err, "load array length")
@@ -1165,9 +1025,9 @@ func (bh *bytesLoadHelper) decodeArrayLength(buf *bytes.Buffer) (int, error) {
 	return int(arrayLen), nil
 }
 
-func (bh *bytesLoadHelper) decodeArray(buf *bytes.Buffer, array reflect.Value) error {
+func (h *bytesLoadHelper) decodeArray(buf *bytes.Buffer, array reflect.Value) error {
 	elementType := array.Type().Elem()
-	arrayLen, err := bh.decodeArrayLength(buf)
+	arrayLen, err := h.decodeArrayLength(buf)
 	if err != nil {
 		return err
 	}
@@ -1178,7 +1038,7 @@ func (bh *bytesLoadHelper) decodeArray(buf *bytes.Buffer, array reflect.Value) e
 	for i := 0; i < arrayLen; i++ {
 		elementPtr := reflect.New(elementType)
 		element := elementPtr.Elem()
-		if err := bh.decodeValue(buf, element); err != nil {
+		if err := h.decodeValue(buf, element); err != nil {
 			return pkg_errors.WithMessagef(err, "load array[%d]", i)
 		}
 		arrayValue = reflect.Append(arrayValue, element)
@@ -1191,7 +1051,7 @@ func (bh *bytesLoadHelper) decodeArray(buf *bytes.Buffer, array reflect.Value) e
 // GenBytesLoadHelperFile 生成go配置表bytes加载帮助代码文件
 func (e *goExporter) GenBytesLoadHelperFile() string {
 	var sb strings.Builder
-	if err := templateGoBytesLoadHelperFile.Execute(&sb, map[string]interface{}{
+	if err := templateGoBytesLoadHelperFile.Execute(&sb, map[string]any{
 		"PkgName": e.kindOptions.PkgName,
 	}); err != nil {
 		panic(pkg_errors.WithMessage(err, "export code: go: GenBytesLoadHelperFile"))
@@ -1217,7 +1077,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
-type mongoDB = mongo.Database
+type MongoDB = mongo.Database
 
 const (
 	collGlobal    = "{{.CollGlobal}}"
@@ -1229,7 +1089,7 @@ func createLoadContext() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), loadTimeout)
 }
 
-func loadNormalBson[Entry any](db *mongoDB, collName string, allEntries *[]Entry) error {
+func loadNormal[Entry any](db *MongoDB, collName string, allEntries *[]Entry) error {
 	var (
 		coll = db.Collection(collName)
 		skip = int64(0)
@@ -1267,7 +1127,7 @@ func loadNormalBson[Entry any](db *mongoDB, collName string, allEntries *[]Entry
 	return nil
 }
 
-func loadGlobalBson(db *mongoDB, tableName string, t any) error {
+func loadGlobal(db *MongoDB, tableName string, t any) error {
 	coll := db.Collection(collGlobal)
 
 	ctx, cancel := createLoadContext()
@@ -1284,7 +1144,7 @@ func loadGlobalBson(db *mongoDB, tableName string, t any) error {
 // GenBSONLoadHelperFile 生成go配置表bson加载帮助代码文件
 func (e *goExporter) GenBSONLoadHelperFile() string {
 	var sb strings.Builder
-	if err := templateGoBSONLoadHelperFile.Execute(&sb, map[string]interface{}{
+	if err := templateGoBSONLoadHelperFile.Execute(&sb, map[string]any{
 		"PkgName":    e.kindOptions.PkgName,
 		"CollGlobal": export.TableGlobalBsonCollName,
 	}); err != nil {

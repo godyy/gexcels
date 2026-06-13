@@ -76,7 +76,6 @@ type TableEntry map[string]interface{}
 
 // Table 配置表定义
 type Table struct {
-	Tag         Tag                    // 标签
 	Name        string                 // 表名
 	Desc        string                 // 描述
 	IsGlobal    bool                   // 是否全局配置表
@@ -85,12 +84,11 @@ type Table struct {
 }
 
 // NewTable 创建配置表
-func NewTable(tag Tag, name, desc string, isGlobal bool) *Table {
+func NewTable(name, desc string, isGlobal bool) *Table {
 	if !MatchName(name) {
 		panic("gexcels: NewTable: table name " + name + " invalid")
 	}
 	table := &Table{
-		Tag:      tag,
 		Name:     name,
 		Desc:     desc,
 		IsGlobal: isGlobal,

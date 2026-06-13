@@ -35,14 +35,15 @@ func ExportGo(p *parse.Parser, path string, options *Options, goOptions *GoOptio
 
 // goExporter go代码导出器
 type goExporter struct {
-	exporterBase                       // base
-	kindOptions      *GoOptions        // 分类选项
-	fieldNames       map[string]string // 导出的字段名
-	fieldTypes       map[string]string // 导出的字段类型
-	structNames      map[string]string // 导出的结构体名
-	tableNames       map[string]string // 导出的表名
-	tableStructNames map[string]string // 导出的表结构体名
-	entryStructNames map[string]string // 导出的条目结构体名
+	exporterBase                             // base
+	kindOptions            *GoOptions        // 分类选项
+	fieldNames             map[string]string // 导出的字段名
+	fieldTypes             map[string]string // 导出的字段类型
+	structNames            map[string]string // 导出的结构体名
+	tableNames             map[string]string // 导出的表名
+	tableStructNames       map[string]string // 导出的表结构体名
+	tableStructExportNames map[string]string // 导出的表结构体导出名
+	entryStructNames       map[string]string // 导出的条目结构体名
 }
 
 func createGoExporter(p *parse.Parser, path string, options *Options, kindOptions kindOptions) (exporter, error) {
@@ -51,14 +52,15 @@ func createGoExporter(p *parse.Parser, path string, options *Options, kindOption
 		return nil, ErrGoPkgEmpty
 	}
 	return &goExporter{
-		exporterBase:     newExporterBase(p, path, options),
-		kindOptions:      goOptions,
-		fieldNames:       make(map[string]string),
-		fieldTypes:       make(map[string]string),
-		structNames:      make(map[string]string),
-		tableNames:       make(map[string]string),
-		tableStructNames: make(map[string]string),
-		entryStructNames: make(map[string]string),
+		exporterBase:           newExporterBase(p, path, options),
+		kindOptions:            goOptions,
+		fieldNames:             make(map[string]string),
+		fieldTypes:             make(map[string]string),
+		structNames:            make(map[string]string),
+		tableNames:             make(map[string]string),
+		tableStructNames:       make(map[string]string),
+		tableStructExportNames: make(map[string]string),
+		entryStructNames:       make(map[string]string),
 	}, nil
 }
 
@@ -75,7 +77,7 @@ func (e *goExporter) export() error {
 		return err
 	}
 
-	if err := e.exportTableMgrFile(); err != nil {
+	if err := e.exportLoadFile(); err != nil {
 		return err
 	}
 
@@ -96,7 +98,7 @@ func (e *goExporter) exportStructsFile() error {
 	}
 
 	content := e.GenStructsFile()
-	filePath := filepath.Join(e.path, e.kindOptions.PkgName+"_structs_.go")
+	filePath := filepath.Join(e.path, e.kindOptions.PkgName+"_structs.go")
 	if err := os.WriteFile(filePath, ([]byte)(content), os.ModePerm); err != nil {
 		return pkg_errors.WithMessagef(err, "export code: go: structs to [%s]", filePath)
 	}
@@ -140,14 +142,14 @@ func (e *goExporter) exportTableFile(td *parse.Table) error {
 	return nil
 }
 
-// 将配置表管理器导出为go代码
-func (e *goExporter) exportTableMgrFile() error {
-	content := e.GenTableMgrFile()
-	filePath := filepath.Join(e.path, e.kindOptions.PkgName+"_manager_.go")
+// exportLoadFile 导出配置表加载文件
+func (e *goExporter) exportLoadFile() error {
+	content := e.GenLoadFile()
+	filePath := filepath.Join(e.path, e.kindOptions.PkgName+"_load.go")
 	if err := os.WriteFile(filePath, ([]byte)(content), os.ModePerm); err != nil {
-		return pkg_errors.WithMessagef(err, "export code: go: table_manager to [%s]", filePath)
+		return pkg_errors.WithMessagef(err, "export code: go: load to [%s]", filePath)
 	}
-	log.PrintfGreen("export code: go: table_manager to [%s]", filePath)
+	log.PrintfGreen("export code: go: load to [%s]", filePath)
 	return nil
 }
 
@@ -163,7 +165,7 @@ func (e *goExporter) exportLoadHelperFile() error {
 			return err
 		}
 	case export.DataBson:
-		if err := e.exportBSONLoadHelperFile(); err != nil {
+		if err := e.exportBsonLoadHelperFile(); err != nil {
 			return err
 		}
 	default:
@@ -175,7 +177,7 @@ func (e *goExporter) exportLoadHelperFile() error {
 // exportJsonLoadHelperFile 导出json加载帮助文件
 func (e *goExporter) exportJsonLoadHelperFile() error {
 	content := e.GenJsonLoadHelperFile()
-	filePath := filepath.Join(e.path, e.kindOptions.PkgName+"_load_.go")
+	filePath := filepath.Join(e.path, e.kindOptions.PkgName+"_load_helper.go")
 	if err := os.WriteFile(filePath, ([]byte)(content), os.ModePerm); err != nil {
 		return pkg_errors.WithMessagef(err, "export code: go: json_load_helper to [%s]", filePath)
 	}
@@ -186,7 +188,7 @@ func (e *goExporter) exportJsonLoadHelperFile() error {
 // exportBytesLoadHelperFile 导出bytes加载帮助文件
 func (e *goExporter) exportBytesLoadHelperFile() error {
 	content := e.GenBytesLoadHelperFile()
-	filePath := filepath.Join(e.path, e.kindOptions.PkgName+"_load_.go")
+	filePath := filepath.Join(e.path, e.kindOptions.PkgName+"_load_helper.go")
 	if err := os.WriteFile(filePath, ([]byte)(content), os.ModePerm); err != nil {
 		return pkg_errors.WithMessagef(err, "export code: go: bytes_load_helper to [%s]", filePath)
 	}
@@ -194,14 +196,20 @@ func (e *goExporter) exportBytesLoadHelperFile() error {
 	return nil
 }
 
-func (e *goExporter) exportBSONLoadHelperFile() error {
+// exportBsonLoadHelperFile 导出bson加载帮助文件
+func (e *goExporter) exportBsonLoadHelperFile() error {
 	content := e.GenBSONLoadHelperFile()
-	filePath := filepath.Join(e.path, e.kindOptions.PkgName+"_load_.go")
+	filePath := filepath.Join(e.path, e.kindOptions.PkgName+"_load_helper.go")
 	if err := os.WriteFile(filePath, ([]byte)(content), os.ModePerm); err != nil {
 		return pkg_errors.WithMessagef(err, "export code: go: bson_load_helper to [%s]", filePath)
 	}
 	log.PrintfGreen("export code: go: bson_load_helper to [%s]", filePath)
 	return nil
+}
+
+// GetTableAmount 获取配置表数量
+func (e *goExporter) GetTableAmount() int {
+	return len(e.parser.Tables)
 }
 
 // GetFieldName 获取字段名称
@@ -257,6 +265,22 @@ func (e *goExporter) GetTableStructName(td *parse.Table) string {
 		e.tableStructNames[td.Name] = s
 		return s
 	}
+}
+
+// GetTableStructExportName 获取表结构体导出名称
+func (e *goExporter) GetTableStructExportName(td *parse.Table) string {
+	if s, ok := e.tableStructExportNames[td.Name]; ok {
+		return s
+	} else {
+		s = e.GenTableStructExportName(td)
+		e.tableStructExportNames[td.Name] = s
+		return s
+	}
+}
+
+// GetTableStructTitleName 获取表结构体标题名称
+func (e *goExporter) GetTableStructTitleName(td *parse.Table) string {
+	return strings.ToTitle(e.GetTableStructName(td))
 }
 
 // GetEntryFieldName 获取条目字段名称
@@ -368,9 +392,18 @@ func (e *goExporter) GenTableName(td *parse.Table) string {
 // GenTableStructName 生成表结构体名称
 func (e *goExporter) GenTableStructName(td *parse.Table) string {
 	if td.IsGlobal {
+		return utils.CamelCase(td.Name, false)
+	} else {
+		return "tab" + utils.CamelCase(td.Name, true)
+	}
+}
+
+// GenTableStructExportName 生成表结构体导出名称
+func (e *goExporter) GenTableStructExportName(td *parse.Table) string {
+	if td.IsGlobal {
 		return utils.CamelCase(td.Name, true)
 	} else {
-		return "Table" + utils.CamelCase(td.Name, true)
+		return "Tab" + utils.CamelCase(td.Name, true)
 	}
 }
 
@@ -574,14 +607,4 @@ func (e *goExporter) GenTableLoadDataMethod(td *parse.Table) string {
 	default:
 		panic(fmt.Sprintf("export code: go: generate table load data method: data-kind %d invalid", e.options.DataKind))
 	}
-}
-
-// GenMgrTableFieldName 生成管理器表字段名称
-func (e *goExporter) GenMgrTableFieldName(td *parse.Table) string {
-	return utils.CamelCase(td.Name)
-}
-
-// GenMgrTableMethodName 生成管理器表方法名称
-func (e *goExporter) GenMgrTableMethodName(td *parse.Table) string {
-	return utils.CamelCase(td.Name, true)
 }

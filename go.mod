@@ -1,6 +1,6 @@
 module github.com/godyy/gexcels
 
-go 1.18
+go 1.24
 
 require (
 	github.com/godyy/gutils v0.0.0-20250516075358-a65172ae61e9

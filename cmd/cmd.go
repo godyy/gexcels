@@ -18,7 +18,6 @@ import (
 var (
 	excelDir  = flag.String("excel-dir", "", "excel directory")
 	tag       = flag.String("tag", "", "specify tags for filtering fields, e.g. \"c/s\"")
-	fileTag   = flag.String("file-tag", "", "specify tags for filtering file, e.g. \"c/s\"")
 	sCodeKind = flag.String("code-kind", "go", "for exporting code, only has \"go\" now")
 	sDataKind = flag.String("data-kind", "json", "for exporting data, has [\"json\", \"bytes\", \"bson\"]")
 	codeDir   = flag.String("code-dir", "", "output code directory")
@@ -78,17 +77,6 @@ func main() {
 				log.Fatalf("tag \"%s\" invalid", v)
 			}
 			parseOptions.Tags[i] = gexcels.Tag(v)
-		}
-	}
-	if *fileTag != "" {
-		s := strings.Split(*fileTag, "/")
-		parseOptions.FileTags = make([]gexcels.Tag, len(s))
-		for i, v := range s {
-			tag := gexcels.Tag(v)
-			if !tag.Valid() {
-				log.Fatalf("file tag \"%s\" invalid", v)
-			}
-			parseOptions.FileTags[i] = gexcels.Tag(v)
 		}
 	}
 	parser, err := parse.Parse(*excelDir, &parseOptions)

@@ -69,7 +69,7 @@ func (e *jsonExporter) exportTableFile(td *parse.Table) error {
 		return pkg_errors.WithMessagef(err, "marshal table[%s]", td.Name)
 	}
 
-	fileName := genTableFileName(td.Name, td.Tag, ".json")
+	fileName := genTableFileName(td.Name, ".json")
 	filePath := filepath.Join(e.path, fileName)
 	if err := os.WriteFile(filePath, bytes, os.ModePerm); err != nil {
 		return pkg_errors.WithMessagef(err, "table[%s] to [%s]", td.Name, filePath)

@@ -66,7 +66,7 @@ func (e *bytesExporter) exportTableFile(td *parse.Table) error {
 
 // exportNormalTableFile 导出常规配置表文件
 func (e *bytesExporter) exportNormalTableFile(td *parse.Table) error {
-	fileName := genTableFileName(td.Name, td.Tag, ".bytes")
+	fileName := genTableFileName(td.Name, ".bytes")
 	filePath := filepath.Join(e.path, fileName)
 	file, err := os.OpenFile(filePath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, os.ModePerm)
 	if err != nil {
@@ -100,7 +100,7 @@ func (e *bytesExporter) exportNormalTableFile(td *parse.Table) error {
 
 // exportGlobalTableFile 导出全局配置表文件
 func (e *bytesExporter) exportGlobalTableFile(td *parse.Table) error {
-	fileName := genTableFileName(td.Name, td.Tag, ".bytes")
+	fileName := genTableFileName(td.Name, ".bytes")
 	filePath := filepath.Join(e.path, fileName)
 	file, err := os.OpenFile(filePath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, os.ModePerm)
 	if err != nil {

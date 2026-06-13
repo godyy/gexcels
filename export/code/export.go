@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"github.com/godyy/gexcels/export"
-	"github.com/godyy/gexcels/internal/utils"
 	"github.com/godyy/gexcels/parse"
 	pkg_errors "github.com/pkg/errors"
 )
@@ -23,22 +22,12 @@ var ErrNoOptionsSpecified = errors.New("export code: no options specified")
 // ErrNoKindOptionsSpecified 未指定代码分类选项
 var ErrNoKindOptionsSpecified = errors.New("export code: no kind options specified")
 
-const (
-	defaultTableManagerName = "Manager" // 默认的管理器名称
-)
-
 // Options 导出代码选项
 type Options struct {
-	DataKind         export.DataKind // 数据分类
-	TableManagerName string          // 代码中的表管理器名称 default by defaultTableManagerName
+	DataKind export.DataKind // 数据分类
 }
 
 func (opt *Options) init() {
-	if opt.TableManagerName == "" {
-		opt.TableManagerName = defaultTableManagerName
-	} else {
-		opt.TableManagerName = utils.CamelCase(opt.TableManagerName, true)
-	}
 }
 
 // kindOptions 代码分类选项

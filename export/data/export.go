@@ -3,7 +3,6 @@ package data
 import (
 	"errors"
 
-	"github.com/godyy/gexcels"
 	internal_define "github.com/godyy/gexcels/export"
 )
 
@@ -28,11 +27,8 @@ func doExport(expo exporter) error {
 }
 
 // genTableFileName 生成表文件名
-func genTableFileName(tableName string, tag gexcels.Tag, ext string) string {
+func genTableFileName(tableName string, ext string) string {
 	fileName := tableName
-	if tag != "" {
-		fileName += "." + string(tag)
-	}
 	fileName += ext
 	return fileName
 }

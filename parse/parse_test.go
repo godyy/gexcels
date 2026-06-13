@@ -2,8 +2,6 @@ package parse
 
 import (
 	"testing"
-
-	"github.com/godyy/gexcels"
 )
 
 func TestParse(t *testing.T) {
@@ -13,7 +11,6 @@ func TestParse(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	options.FileTags = []gexcels.Tag{gexcels.TagEmpty, "test"}
 	_, err = Parse("../internal/test/excels", options)
 	if err != nil {
 		t.Fatal(err)
@@ -29,10 +26,6 @@ func TestParseOnlyFields(t *testing.T) {
 }
 
 func TestRegexp(t *testing.T) {
-	t.Log(tableFileNameRegexp.FindStringSubmatch("test"))
-	t.Log(tableFileNameRegexp.FindStringSubmatch("test.test"))
-	t.Log(tableFileNameRegexp.FindStringSubmatch("test."))
-
 	t.Log(structFileNameRegexp.FindStringSubmatch("core.struct"))
 	t.Log(structFileNameRegexp.FindStringSubmatch("core.struct.test"))
 	t.Log(structFileNameRegexp.FindStringSubmatch("core.struct."))
