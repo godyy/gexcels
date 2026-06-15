@@ -601,6 +601,10 @@ var afterLoadFuncMap map[string]*afterLoadFuncInfo
 
 // registerAfterLoadFunc 注册加载后处理函数
 func registerAfterLoadFunc(tableName string, f afterLoadFunc, priority int) {
+	if afterLoadFuncMap == nil {
+		afterLoadFuncMap = make(map[string]*afterLoadFuncInfo)
+	}
+
 	if _, ok := afterLoadFuncMap[tableName]; ok {
 		panic(fmt.Errorf("table[%s] after load func already registered", tableName))
 	}
@@ -798,6 +802,10 @@ var afterLoadFuncMap map[string]*afterLoadFuncInfo
 
 // registerAfterLoadFunc 注册加载后处理函数
 func registerAfterLoadFunc(tableName string, f afterLoadFunc, priority int) {
+	if afterLoadFuncMap == nil {
+		afterLoadFuncMap = make(map[string]*afterLoadFuncInfo)
+	}
+
 	if _, ok := afterLoadFuncMap[tableName]; ok {
 		panic(fmt.Errorf("table[%s] after load func already registered", tableName))
 	}
