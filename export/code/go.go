@@ -404,7 +404,7 @@ func (e *goExporter) GenTableName(td *parse.Table) string {
 
 // GenTableNameConstName 生成表名常量名名称
 func (e *goExporter) GenTableNameConstName(td *parse.Table) string {
-	return "TabName" + utils.CamelCase(td.Name, true)
+	return "TblName" + utils.CamelCase(td.Name, true)
 }
 
 // GenTableStructName 生成表结构体名称
@@ -412,7 +412,7 @@ func (e *goExporter) GenTableStructName(td *parse.Table) string {
 	if td.IsGlobal {
 		return utils.CamelCase(td.Name, false)
 	} else {
-		return "tab" + utils.CamelCase(td.Name, true)
+		return "tbl" + utils.CamelCase(td.Name, true)
 	}
 }
 
@@ -421,7 +421,7 @@ func (e *goExporter) GenTableStructExportName(td *parse.Table) string {
 	if td.IsGlobal {
 		return utils.CamelCase(td.Name, true)
 	} else {
-		return "Tab" + utils.CamelCase(td.Name, true)
+		return "Tbl" + utils.CamelCase(td.Name, true)
 	}
 }
 
