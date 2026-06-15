@@ -273,6 +273,8 @@ var templateGoNormalTableFile = template.Must(template.New("go_table_file").
 
 package {{.PkgName}}
 
+const {{.Exporter.GetTableNameConstName .Table}} = "{{.Table.Name}}"
+
 {{.Exporter.GenEntryStruct .Table}}
 {{$entryStructName := .Exporter.GetEntryStructName .Table -}}
 {{- $tableStructName := .Exporter.GetTableStructName .Table}}
@@ -399,6 +401,8 @@ var templateGoGlobalTableFile = template.Must(template.New("go_global_table_file
 
 package {{.PkgName}}
 
+const {{.Exporter.GetTableNameConstName .Table}} = "{{.Table.Name}}"
+
 {{$tableStructName := .Exporter.GetTableStructName .Table -}}
 // {{$tableStructName}} {{.Table.Desc}}
 type {{$tableStructName}} struct {
@@ -437,7 +441,11 @@ package {{.PkgName}}
 
 import (
 	"fmt"
+	"slices"
+	"sort"
 	"sync/atomic"
+
+	pkgerrors "github.com/pkg/errors"
 )
 
 // Load 加载所有配置表
@@ -447,15 +455,33 @@ func Load(basePath string) error {
 			return err
 		}
 	}
+
+	for _, info := range afterLoadFuncs {
+		if err := runAfterLoadFunc(info); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
 // LoadTable 加载指定配置表
 func LoadTable(basePath string, tableName string) error {
-	if load, ok := loadFuncMap[tableName]; ok {
-		return load(basePath)
+	f, ok := loadFuncMap[tableName]
+	if !ok {
+		return fmt.Errorf("table[%s] load func not registered", tableName)
 	}
-	return fmt.Errorf("table[%s] load func not registered", tableName)
+	if err := f(basePath); err != nil {
+		return err
+	}
+
+	if info := afterLoadFuncMap[tableName]; info != nil {
+		if err := runAfterLoadFunc(info); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 var (
@@ -495,7 +521,7 @@ func registerAllLoadFuncs() {
 	loadFuncMap = make(map[string]loadFunc, {{.Exporter.GetTableAmount}})
 {{range $index, $table := .Tables -}}
 {{if $index}}{{"\n"}}{{end -}}
-	registerLoadFunc("{{$table.Name}}", func (basePath string) error {
+	registerLoadFunc({{$.Exporter.GetTableNameConstName $table}}, func (basePath string) error {
 		t := new{{$.Exporter.GetTableStructExportName $table}}()
 		if err := t.load(basePath); err != nil {
 			return err
@@ -509,6 +535,51 @@ func registerAllLoadFuncs() {
 func init() {
 	registerAllLoadFuncs()
 }
+
+// afterLoadFunc 加载后处理函数
+type afterLoadFunc func() error
+
+// afterLoadFuncInfo 加载后处理函数信息
+type afterLoadFuncInfo struct {
+	tableName string        // 配置表名称
+	f         afterLoadFunc // 加载后处理函数
+	priority  int           // 优先级，数值越小越先执行
+}
+
+// afterLoadFuncs 加载后处理函数列表
+var afterLoadFuncs []*afterLoadFuncInfo
+
+// afterLoadFuncMap 加载后处理函数映射
+var afterLoadFuncMap map[string]*afterLoadFuncInfo
+
+// registerAfterLoadFunc 注册加载后处理函数
+func registerAfterLoadFunc(tableName string, f afterLoadFunc, priority int) {
+	if _, ok := afterLoadFuncMap[tableName]; ok {
+		panic(fmt.Errorf("table[%s] after load func already registered", tableName))
+	}
+
+	info := &afterLoadFuncInfo{
+		tableName: tableName,
+		f:         f,
+		priority:  priority,
+	}
+	afterLoadFuncMap[tableName] = info
+
+	// 根据优先级二分查找插入位置，保证afterLoadFuncs按priority升序排列
+	pos := sort.Search(len(afterLoadFuncs), func(i int) bool {
+		return afterLoadFuncs[i].priority > info.priority
+	})
+	// 在找到的位置插入当前处理函数
+	afterLoadFuncs = slices.Insert(afterLoadFuncs, pos, info)
+}
+
+// runAfterLoadFunc 执行加载后处理函数
+func runAfterLoadFunc(info *afterLoadFuncInfo) error {
+	if err := info.f(); err != nil {
+		return pkgerrors.WithMessagef(err, "table[%s] after load", info.tableName)
+	}
+	return nil
+}
 `))
 
 // templateGoBsonLoadFile go bson 配置表加载文件模版
@@ -520,7 +591,11 @@ package {{.PkgName}}
 
 import (
 	"fmt"
+	"slices"
+	"sort"
 	"sync/atomic"
+
+	pkgerrors "github.com/pkg/errors"
 )
 
 // Load 加载所有配置表
@@ -530,6 +605,13 @@ func Load(db *MongoDB) error {
 			return err
 		}
 	}
+
+	for _, info := range afterLoadFuncs {
+		if err := runAfterLoadFunc(info); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -539,7 +621,17 @@ func LoadTable(db *MongoDB, tableName string) error {
 	if !ok {
 		return fmt.Errorf("table[%s] load func not registered", tableName)
 	}
-	return f(db)
+	if err := f(db); err != nil {
+		return err
+	}
+
+	if info := afterLoadFuncMap[tableName]; info != nil {
+		if err := runAfterLoadFunc(info); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 var (
@@ -579,7 +671,7 @@ func registerAllLoadFuncs() {
 	loadFuncMap = make(map[string]loadFunc, {{.Exporter.GetTableAmount}})
 	{{range $index, $table := .Tables -}}
 {{if $index}}{{"\n"}}{{end -}}
-	registerLoadFunc("{{$table.Name}}", func (db *MongoDB) error {
+	registerLoadFunc({{$.Exporter.GetTableNameConstName $table}}, func (db *MongoDB) error {
 		t := new{{$.Exporter.GetTableStructExportName $table}}()
 		if err := t.load(db); err != nil {
 			return err
@@ -592,6 +684,51 @@ func registerAllLoadFuncs() {
 
 func init() {
 	registerAllLoadFuncs()
+}
+
+// afterLoadFunc 加载后处理函数
+type afterLoadFunc func() error
+
+// afterLoadFuncInfo 加载后处理函数信息
+type afterLoadFuncInfo struct {
+	tableName string        // 配置表名称
+	f         afterLoadFunc // 加载后处理函数
+	priority  int           // 优先级，数值越小越先执行
+}
+
+// afterLoadFuncs 加载后处理函数列表
+var afterLoadFuncs []*afterLoadFuncInfo
+
+// afterLoadFuncMap 加载后处理函数映射
+var afterLoadFuncMap map[string]*afterLoadFuncInfo
+
+// registerAfterLoadFunc 注册加载后处理函数
+func registerAfterLoadFunc(tableName string, f afterLoadFunc, priority int) {
+	if _, ok := afterLoadFuncMap[tableName]; ok {
+		panic(fmt.Errorf("table[%s] after load func already registered", tableName))
+	}
+
+	info := &afterLoadFuncInfo{
+		tableName: tableName,
+		f:         f,
+		priority:  priority,
+	}
+	afterLoadFuncMap[tableName] = info
+
+	// 根据优先级二分查找插入位置，保证afterLoadFuncs按priority升序排列
+	pos := sort.Search(len(afterLoadFuncs), func(i int) bool {
+		return afterLoadFuncs[i].priority > info.priority
+	})
+	// 在找到的位置插入当前处理函数
+	afterLoadFuncs = slices.Insert(afterLoadFuncs, pos, info)
+}
+
+// runAfterLoadFunc 执行加载后处理函数
+func runAfterLoadFunc(info *afterLoadFuncInfo) error {
+	if err := info.f(); err != nil {
+		return pkgerrors.WithMessagef(err, "table[%s] after load", info.tableName)
+	}
+	return nil
 }
 `))
 
@@ -624,7 +761,7 @@ func (e *goExporter) GenLoadFile() string {
 var templateGoNormalTableLoadJson = template.Must(template.New("go_normal_table_load_json").
 	Parse(`// load 加载数据
 func (t *{{.Exporter.GetTableStructName .Table}}) load(basePath string) error {
-	if err := loadHelper.load(basePath, "{{.Table.Name}}", &t.entries); err != nil {
+	if err := loadHelper.load(basePath, {{.Exporter.GetTableNameConstName .Table}}, &t.entries); err != nil {
 		return err
 	}
 	t.init()
@@ -647,7 +784,7 @@ func (e *goExporter) GenNormalTableLoadJson(td *parse.Table) string {
 var templateGoGlobalTableLoadJson = template.Must(template.New("go_global_table_load_json").
 	Parse(`// load 加载数据
 func (t *{{.Exporter.GetTableStructName .Table}}) load(basePath string) error {
-	return loadHelper.load(basePath, "{{.Table.Name}}", t)
+	return loadHelper.load(basePath, {{.Exporter.GetTableNameConstName .Table}}, t)
 }`))
 
 // GenGlobalTableLoadJson 生成go全局配置表json加载代码
@@ -708,7 +845,7 @@ func (e *goExporter) GenJsonLoadHelperFile() string {
 var templateGoNormalLoadBytes = template.Must(template.New("go_normal_table_load_bytes").
 	Parse(`// load 加载数据
 func (t *{{.Exporter.GetTableStructName .Table}}) load(basePath string) error {
-	if err := loadHelper.load(basePath, "{{.Table.Name}}", &t.entries); err != nil {
+	if err := loadHelper.load(basePath, {{.Exporter.GetTableNameConstName .Table}}, &t.entries); err != nil {
 		return err
 	}
 	t.init()
@@ -731,7 +868,7 @@ func (e *goExporter) GenNormalTableLoadBytes(td *parse.Table) string {
 var templateGoGlobalLoadBytes = template.Must(template.New("go_global_table_load_bytes").
 	Parse(`// load 加载数据
 func (t *{{.Exporter.GetTableStructName .Table}}) load(basePath string) error {
-	return loadHelper.load(basePath, "{{.Table.Name}}", t)
+	return loadHelper.load(basePath, {{.Exporter.GetTableNameConstName .Table}}, t)
 }`))
 
 // GenGlobalTableLoadBytes 生成go全局配置表bytes加载代码
@@ -750,7 +887,7 @@ func (e *goExporter) GenGlobalTableLoadBytes(td *parse.Table) string {
 var templateGoNormalLoadBson = template.Must(template.New("go_normal_table_load_bson").
 	Parse(`// load 加载数据
 func (t *{{.Exporter.GetTableStructName .Table}}) load(db *MongoDB) error {
-	if err := loadNormal(db, "{{.Table.Name}}", &t.entries); err != nil {
+	if err := loadNormal(db, {{.Exporter.GetTableNameConstName .Table}}, &t.entries); err != nil {
 		return err
 	}
 	t.init()
@@ -773,7 +910,7 @@ func (e *goExporter) GenNormalTableLoadBson(td *parse.Table) string {
 var templateGoGlobalLoadBson = template.Must(template.New("go_global_table_load_bson").
 	Parse(`// load 加载数据
 func (t *{{.Exporter.GetTableStructName .Table}}) load(db *MongoDB) error {
-	return loadGlobal(db, "{{.Table.Name}}", t)
+	return loadGlobal(db, {{.Exporter.GetTableNameConstName .Table}}, t)
 }`))
 
 // GenGlobalTableLoadBson 生成go全局配置表bson加载代码

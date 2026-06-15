@@ -41,6 +41,7 @@ type goExporter struct {
 	fieldTypes             map[string]string // 导出的字段类型
 	structNames            map[string]string // 导出的结构体名
 	tableNames             map[string]string // 导出的表名
+	tableNameConstNames    map[string]string // 导出的表名常量名名称
 	tableStructNames       map[string]string // 导出的表结构体名
 	tableStructExportNames map[string]string // 导出的表结构体导出名
 	entryStructNames       map[string]string // 导出的条目结构体名
@@ -58,6 +59,7 @@ func createGoExporter(p *parse.Parser, path string, options *Options, kindOption
 		fieldTypes:             make(map[string]string),
 		structNames:            make(map[string]string),
 		tableNames:             make(map[string]string),
+		tableNameConstNames:    make(map[string]string),
 		tableStructNames:       make(map[string]string),
 		tableStructExportNames: make(map[string]string),
 		entryStructNames:       make(map[string]string),
@@ -256,6 +258,17 @@ func (e *goExporter) GetTableName(td *parse.Table) string {
 	}
 }
 
+// GetTableNameConstName 获取表名常量名名称
+func (e *goExporter) GetTableNameConstName(td *parse.Table) string {
+	if s, ok := e.tableNameConstNames[td.Name]; ok {
+		return s
+	} else {
+		s = e.GenTableNameConstName(td)
+		e.tableNameConstNames[td.Name] = s
+		return s
+	}
+}
+
 // GetTableStructName 获取表结构体名称
 func (e *goExporter) GetTableStructName(td *parse.Table) string {
 	if s, ok := e.tableStructNames[td.Name]; ok {
@@ -387,6 +400,11 @@ func (e *goExporter) GenStructName(sd *parse.Struct) string {
 // GenTableName 生成表名称
 func (e *goExporter) GenTableName(td *parse.Table) string {
 	return td.Name
+}
+
+// GenTableNameConstName 生成表名常量名名称
+func (e *goExporter) GenTableNameConstName(td *parse.Table) string {
+	return "TabName" + utils.CamelCase(td.Name, true)
 }
 
 // GenTableStructName 生成表结构体名称
