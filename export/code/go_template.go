@@ -440,6 +440,7 @@ var templateGoLoadFile = template.Must(template.New("go_load_file").
 package {{.PkgName}}
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
@@ -450,8 +451,12 @@ import (
 
 // Load 加载所有配置表
 func Load(basePath string) error {
-	for _, f := range loadFuncs {
-		if err := f(basePath); err != nil {
+	if basePath == "" {
+		return errors.New("basePath is empty")
+	}
+
+	for _, info := range loadFuncs {
+		if err := runLoadFunc(info, basePath); err != nil {
 			return err
 		}
 	}
@@ -466,18 +471,43 @@ func Load(basePath string) error {
 }
 
 // LoadTable 加载指定配置表
-func LoadTable(basePath string, tableName string) error {
-	f, ok := loadFuncMap[tableName]
-	if !ok {
-		return fmt.Errorf("table[%s] load func not registered", tableName)
+func LoadTable(basePath string, tableName ...string) error {
+	if basePath == "" {
+		return errors.New("basePath is empty")
 	}
-	if err := f(basePath); err != nil {
-		return err
+	if len(tableName) == 0 {
+		return errors.New("table name is empty")
 	}
 
-	if info := afterLoadFuncMap[tableName]; info != nil {
-		if err := runAfterLoadFunc(info); err != nil {
+	loadFuncs := make([]*loadFuncInfo, 0, len(tableName))
+	afterLoadFuncs := make([]*afterLoadFuncInfo, 0, len(tableName))
+	for _, name := range tableName {
+		loadFunc, ok := loadFuncMap[name]
+		if !ok {
+			return fmt.Errorf("table[%s] load func not registered", name)
+		}
+		loadFuncs = append(loadFuncs, loadFunc)
+
+		afterLoadFunc, ok := afterLoadFuncMap[name]
+		if ok {
+			afterLoadFuncs = append(afterLoadFuncs, afterLoadFunc)
+		}
+	}
+
+	for _, loadFunc := range loadFuncs {
+		if err := runLoadFunc(loadFunc, basePath); err != nil {
 			return err
+		}
+	}
+
+	if len(afterLoadFuncs) > 0 {
+		sort.Slice(afterLoadFuncs, func(i, j int) bool {
+			return afterLoadFuncs[i].priority < afterLoadFuncs[j].priority
+		})
+		for _, afterLoadFunc := range afterLoadFuncs {
+			if err := runAfterLoadFunc(afterLoadFunc); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -501,24 +531,41 @@ func {{$.Exporter.GetTableStructExportName $table}}() *{{$.Exporter.GetTableStru
 
 // loadFunc 配置表加载函数
 type loadFunc func(basePath string) error
+// loadFuncInfo 配置表加载函数信息
+type loadFuncInfo struct {
+	tableName string   // 配置表名称
+	f         loadFunc // 配置表加载函数
+}
 // loadFuncs 配置表加载函数列表
-var loadFuncs []loadFunc
+var loadFuncs []*loadFuncInfo
 // loadFuncMap 配置表加载函数映射
-var loadFuncMap map[string]loadFunc
+var loadFuncMap map[string]*loadFuncInfo
 
 // registerLoadFunc 注册配置表加载函数
 func registerLoadFunc(tableName string, f loadFunc) {
 	if _, ok := loadFuncMap[tableName]; ok {
 		panic(fmt.Errorf("table[%s] load func already registered", tableName))
 	}
-	loadFuncMap[tableName] = f
-	loadFuncs = append(loadFuncs, f)
+	info := &loadFuncInfo {
+		tableName: tableName,
+		f:         f,
+	}
+	loadFuncMap[tableName] = info
+	loadFuncs = append(loadFuncs, info)
+}
+
+// runLoadFunc 执行配置表加载函数
+func runLoadFunc(info *loadFuncInfo, basePath string) error {
+	if err := info.f(basePath); err != nil {
+		return pkgerrors.WithMessagef(err, "table[%s] load", info.tableName)
+	}
+	return nil
 }
 
 // registerAllLoadFuncs 注册所有配置表加载函数
 func registerAllLoadFuncs() {
-	loadFuncs = make([]loadFunc, 0, {{.Exporter.GetTableAmount}})
-	loadFuncMap = make(map[string]loadFunc, {{.Exporter.GetTableAmount}})
+	loadFuncs = make([]*loadFuncInfo, 0, {{.Exporter.GetTableAmount}})
+	loadFuncMap = make(map[string]*loadFuncInfo, {{.Exporter.GetTableAmount}})
 {{range $index, $table := .Tables -}}
 {{if $index}}{{"\n"}}{{end -}}
 	registerLoadFunc({{$.Exporter.GetTableNameConstName $table}}, func (basePath string) error {
@@ -590,6 +637,7 @@ var templateGoBsonLoadFile = template.Must(template.New("go_bson_load_file").
 package {{.PkgName}}
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
@@ -600,8 +648,12 @@ import (
 
 // Load 加载所有配置表
 func Load(db *MongoDB) error {
-	for _, f := range loadFuncs {
-		if err := f(db); err != nil {
+	if db == nil {
+		return errors.New("db is nil")
+	}
+
+	for _, info := range loadFuncs {
+		if err := runLoadFunc(info, db); err != nil {
 			return err
 		}
 	}
@@ -616,18 +668,43 @@ func Load(db *MongoDB) error {
 }
 
 // LoadTable 加载指定配置表
-func LoadTable(db *MongoDB, tableName string) error {
-	f, ok := loadFuncMap[tableName]
-	if !ok {
-		return fmt.Errorf("table[%s] load func not registered", tableName)
+func LoadTable(db *MongoDB, tableName ...string) error {
+	if db == nil {
+		return errors.New("db is nil")
 	}
-	if err := f(db); err != nil {
-		return err
+	if len(tableName) == 0 {
+		return errors.New("table name is empty")
 	}
 
-	if info := afterLoadFuncMap[tableName]; info != nil {
-		if err := runAfterLoadFunc(info); err != nil {
+	loadFuncs := make([]*loadFuncInfo, 0, len(tableName))
+	afterLoadFuncs := make([]*afterLoadFuncInfo, 0, len(tableName))
+	for _, name := range tableName {
+		loadFunc, ok := loadFuncMap[name]
+		if !ok {
+			return fmt.Errorf("table[%s] load func not registered", name)
+		}
+		loadFuncs = append(loadFuncs, loadFunc)
+
+		afterLoadFunc, ok := afterLoadFuncMap[name]
+		if ok {
+			afterLoadFuncs = append(afterLoadFuncs, afterLoadFunc)
+		}
+	}
+
+	for _, loadFunc := range loadFuncs {
+		if err := runLoadFunc(loadFunc, db); err != nil {
 			return err
+		}
+	}
+
+	if len(afterLoadFuncs) > 0 {
+		sort.Slice(afterLoadFuncs, func(i, j int) bool {
+			return afterLoadFuncs[i].priority < afterLoadFuncs[j].priority
+		})
+		for _, afterLoadFunc := range afterLoadFuncs {
+			if err := runAfterLoadFunc(afterLoadFunc); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -651,24 +728,41 @@ func {{$.Exporter.GetTableStructExportName $table}}() *{{$.Exporter.GetTableStru
 
 // loadFunc 配置表加载函数
 type loadFunc func(*MongoDB) error
+// loadFuncInfo 配置表加载函数信息
+type loadFuncInfo struct {
+	tableName string   // 配置表名称
+	f         loadFunc // 配置表加载函数
+}
 // loadFuncs 配置表加载函数列表
-var loadFuncs []loadFunc
+var loadFuncs []*loadFuncInfo
 // loadFuncMap 配置表加载函数映射
-var loadFuncMap map[string]loadFunc
+var loadFuncMap map[string]*loadFuncInfo
 
 // registerLoadFunc 注册配置表加载函数
 func registerLoadFunc(tableName string, f loadFunc) {
 	if _, ok := loadFuncMap[tableName]; ok {
 		panic(fmt.Errorf("table[%s] load func already registered", tableName))
 	}
-	loadFuncMap[tableName] = f
-	loadFuncs = append(loadFuncs, f)
+	info := &loadFuncInfo {
+		tableName: tableName,
+		f:         f,
+	}
+	loadFuncMap[tableName] = info
+	loadFuncs = append(loadFuncs, info)
+}
+
+// runLoadFunc 执行配置表加载函数
+func runLoadFunc(info *loadFuncInfo, db *MongoDB) error {
+	if err := info.f(db); err != nil {
+		return pkgerrors.WithMessagef(err, "table[%s] load", info.tableName)
+	}
+	return nil
 }
 
 // registerAllLoadFuncs 注册所有配置表加载函数
 func registerAllLoadFuncs() {
-	loadFuncs = make([]loadFunc, 0, {{.Exporter.GetTableAmount}})
-	loadFuncMap = make(map[string]loadFunc, {{.Exporter.GetTableAmount}})
+	loadFuncs = make([]*loadFuncInfo, 0, {{.Exporter.GetTableAmount}})
+	loadFuncMap = make(map[string]*loadFuncInfo, {{.Exporter.GetTableAmount}})
 	{{range $index, $table := .Tables -}}
 {{if $index}}{{"\n"}}{{end -}}
 	registerLoadFunc({{$.Exporter.GetTableNameConstName $table}}, func (db *MongoDB) error {
@@ -1238,13 +1332,13 @@ func loadNormal[Entry any](db *MongoDB, collName string, allEntries *[]Entry) er
 		cursor, err := coll.Find(ctx, bson.M{}, options.Find().SetSkip(skip).SetLimit(loadBatchSize))
 		if err != nil {
 			cancel()
-			return pkgerrors.WithMessagef(err, "[%s][%s] load failed at skip:%d limit:%d", db.Name(), collName, skip, loadBatchSize)
+			return pkgerrors.WithMessagef(err, "load failed, skip:%d limit:%d", skip, loadBatchSize)
 		}
 
 		var entries []Entry
 		if err := cursor.All(ctx, &entries); err != nil {
 			cancel()
-			return pkgerrors.WithMessagef(err, "[%s][%s] decode failed at skip:%d limit:%d", db.Name(), collName, skip, loadBatchSize)
+			return pkgerrors.WithMessagef(err, "decode failed, skip:%d limit:%d", skip, loadBatchSize)
 		}
 
 		if errors.Is(err, mongo.ErrNoDocuments) {
@@ -1271,7 +1365,7 @@ func loadGlobal(db *MongoDB, tableName string, t any) error {
 	defer cancel()
 
 	if err := coll.FindOne(ctx, bson.M{"_id": tableName}).Decode(t); err != nil {
-		return pkgerrors.WithMessagef(err, "[%s][%s] load failed", db.Name(), tableName)
+		return pkgerrors.WithMessage(err, "load failed")
 	}
 
 	return nil
