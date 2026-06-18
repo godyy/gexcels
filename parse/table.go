@@ -253,7 +253,7 @@ func (p *Parser) parseTableField(td *Table, sheet *xlsx.Sheet, col int) (*gexcel
 
 	td.AddField(fd)
 
-	if col != 0 {
+	if col != gexcels.TableColFieldID {
 		fieldRule, err := getSheetValue(sheet, gexcels.TableRowFieldRule, col, true)
 		if err != nil {
 			return nil, pkg_errors.WithMessage(err, "get fieldRule cell")
