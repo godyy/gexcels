@@ -475,11 +475,18 @@ func (p *Parser) parseGlobalTableField(td *Table, row *xlsx.Row) error {
 		0,
 	)
 
+	td.AddField(fd)
+
 	if err := p.parseTableFieldRules(td, fd, row.GetCell(gexcels.GlobalTableColFieldRule).Value); err != nil {
 		return err
 	}
 
-	td.AddField(fd)
+	if fd.Type == gexcels.FTStruct || (fd.Type == gexcels.FTArray && fd.ElementType == gexcels.FTStruct) {
+		var fieldPath []string
+		var links []*TableLink
+		p.getFieldTableLinks(fd.Field, &fieldPath, &links)
+		td.addLink(links...)
+	}
 
 	if p.options.OnlyFields {
 		return nil
