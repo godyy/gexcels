@@ -261,7 +261,7 @@ func (p *Parser) parseTableField(td *Table, sheet *xlsx.Sheet, col int) (*gexcel
 		if err = p.parseTableFieldRules(td, fd, fieldRule); err != nil {
 			return nil, err
 		}
-		if fd.Type == gexcels.FTStruct || (fd.Type == gexcels.FTArray && fd.ElementType == gexcels.FTStruct) {
+		if fd.Type == gexcels.FTStruct || (fd.Type == gexcels.FTArray && fd.GetElementType().Type == gexcels.FTStruct) {
 			var fieldPath []string
 			var links []*TableLink
 			p.getFieldTableLinks(fd.Field, &fieldPath, &links)
@@ -299,7 +299,7 @@ func (p *Parser) parseTableFieldRules(td *Table, fd *gexcels.TableField, s strin
 				return errFieldRuleOnNonPrimitiveField(fr.FRName())
 			}
 		case *gexcels.FRLink:
-			if !fd.Type.Primitive() && !(fd.Type == gexcels.FTArray && fd.ElementType.Primitive()) {
+			if !fd.Type.Primitive() && !(fd.Type == gexcels.FTArray && fd.GetElementType().Type.Primitive()) {
 				return errFieldRuleOnNonPrimitiveField(fr.FRName())
 			}
 			td.addLink(newTableLink([]string{fd.Name}, r.TableName, r.FieldName))
@@ -481,7 +481,7 @@ func (p *Parser) parseGlobalTableField(td *Table, row *xlsx.Row) error {
 		return err
 	}
 
-	if fd.Type == gexcels.FTStruct || (fd.Type == gexcels.FTArray && fd.ElementType == gexcels.FTStruct) {
+	if fd.Type == gexcels.FTStruct || (fd.Type == gexcels.FTArray && fd.GetElementType().Type == gexcels.FTStruct) {
 		var fieldPath []string
 		var links []*TableLink
 		p.getFieldTableLinks(fd.Field, &fieldPath, &links)

@@ -466,16 +466,17 @@ func (e *goExporter) GenFieldType(fd *gexcels.Field) string {
 	if fd.Type.Primitive() {
 		return e.GenPrimitiveFieldType(fd.Type)
 	} else if fd.Type == gexcels.FTStruct {
-		sd := e.parser.GetStructByName(fd.StructName)
+		sd := e.parser.GetStructByName(fd.GetName())
 		return "*" + e.GetStructName(sd)
 	} else if fd.Type == gexcels.FTArray {
-		if fd.ElementType.Primitive() {
-			return "[]" + e.GenPrimitiveFieldType(fd.ElementType)
-		} else if fd.ElementType == gexcels.FTStruct {
-			sd := e.parser.GetStructByName(fd.StructName)
+		elementType := fd.GetElementType()
+		if elementType.Type.Primitive() {
+			return "[]" + e.GenPrimitiveFieldType(elementType.Type)
+		} else if elementType.Type == gexcels.FTStruct {
+			sd := e.parser.GetStructByName(elementType.GetName())
 			return "[]*" + e.GetStructName(sd)
 		} else {
-			panic(fmt.Sprintf("export code: go: GenFieldType: array element type %d invalid", fd.ElementType))
+			panic(fmt.Sprintf("export code: go: GenFieldType: array element type %d invalid", elementType.Type))
 		}
 	} else {
 		panic(fmt.Sprintf("export code: go: GenFieldType: field type %d invalid", fd.Type))

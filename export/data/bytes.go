@@ -151,7 +151,7 @@ func (e *bytesExporter) encodeFieldValue(fd *gexcels.Field, index int, value int
 	if fd.Type.Primitive() {
 		return e.encodePrimitiveValue(fd.Type, value)
 	} else if fd.Type == gexcels.FTStruct {
-		return e.encodeStructField(e.parser.GetStructByName(fd.StructName), value)
+		return e.encodeStructField(e.parser.GetStructByName(fd.GetName()), value)
 	} else if fd.Type == gexcels.FTArray {
 		return e.encodeArrayValue(fd, value)
 	} else {
@@ -211,15 +211,16 @@ func (e *bytesExporter) encodeArrayValue(fd *gexcels.Field, value interface{}) e
 	if _, err := e.buf.WriteVarint16(int16(v.Len())); err != nil {
 		return pkg_errors.WithMessagef(err, "field[%s] length", fd.Name)
 	}
-	if fd.ElementType.Primitive() {
+	elementType := fd.GetElementType()
+	if elementType.Type.Primitive() {
 		for i := 0; i < v.Len(); i++ {
 			vv := v.Index(i)
-			if err := e.encodePrimitiveValue(fd.ElementType, vv.Interface()); err != nil {
+			if err := e.encodePrimitiveValue(elementType.Type, vv.Interface()); err != nil {
 				return pkg_errors.WithMessagef(err, "field[%s][%d]", fd.Name, i)
 			}
 		}
-	} else if fd.ElementType == gexcels.FTStruct {
-		sd := e.parser.GetStructByName(fd.StructName)
+	} else if elementType.Type == gexcels.FTStruct {
+		sd := e.parser.GetStructByName(elementType.GetName())
 		for i := 0; i < v.Len(); i++ {
 			vv := v.Index(i)
 			if err := e.encodeStructField(sd, vv.Interface()); err != nil {

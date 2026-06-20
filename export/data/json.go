@@ -114,7 +114,7 @@ func (e *jsonExporter) marshalJsonFieldValue(fd *gexcels.Field, val interface{})
 	if fd.Type.Primitive() {
 		return json.Marshal(val)
 	} else if fd.Type == gexcels.FTStruct {
-		sd := e.parser.GetStructByName(fd.StructName)
+		sd := e.parser.GetStructByName(fd.GetName())
 		return e.marshalJsonStructValue(sd, val)
 	} else if fd.Type == gexcels.FTArray {
 		return e.marshalJsonArrayValue(fd, val)
@@ -156,10 +156,11 @@ func (e *jsonExporter) marshalJsonStructValue(sd *parse.Struct, val interface{})
 
 // marshalJsonArrayValue 编码数组值
 func (e *jsonExporter) marshalJsonArrayValue(fd *gexcels.Field, val interface{}) ([]byte, error) {
-	if fd.ElementType.Primitive() {
+	elementType := fd.GetElementType()
+	if elementType.Type.Primitive() {
 		return json.Marshal(val)
-	} else if fd.ElementType == gexcels.FTStruct {
-		sd := e.parser.GetStructByName(fd.StructName)
+	} else if elementType.Type == gexcels.FTStruct {
+		sd := e.parser.GetStructByName(elementType.GetName())
 		refVal := reflect.ValueOf(val)
 		buf := bytes.NewBuffer(nil)
 		buf.WriteString("[")
@@ -169,16 +170,16 @@ func (e *jsonExporter) marshalJsonArrayValue(fd *gexcels.Field, val interface{})
 			}
 			elemValJson, err := e.marshalJsonStructValue(sd, refVal.Index(i).Interface())
 			if err != nil {
-				return nil, pkg_errors.WithMessagef(err, "[%d]%s", i, fd.StructName)
+				return nil, pkg_errors.WithMessagef(err, "[%d]%s", i, elementType.GetName())
 			}
 			if _, err := buf.Write(elemValJson); err != nil {
-				return nil, pkg_errors.WithMessagef(err, "[%d]%s", i, fd.StructName)
+				return nil, pkg_errors.WithMessagef(err, "[%d]%s", i, elementType.GetName())
 			}
 		}
 		buf.WriteString("]")
 		return buf.Bytes(), nil
 	} else {
-		panic(fmt.Sprintf("export data: json: marshalArrayValue: elment type %d invalid", fd.ElementType))
+		panic(fmt.Sprintf("export data: json: marshalArrayValue: elment type %d invalid", elementType.Type))
 	}
 }
 

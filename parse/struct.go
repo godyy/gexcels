@@ -224,9 +224,9 @@ func (p *Parser) parseStructFieldValue(fd *gexcels.Field, s string) (interface{}
 		return nil, nil
 	}
 
-	sd := p.GetStructByName(fd.StructName)
+	sd := p.GetStructByName(fd.GetName())
 	if sd == nil {
-		return nil, errStructNotDefine(fd.StructName)
+		return nil, errStructNotDefine(fd.GetName())
 	}
 
 	val := reflect.New(sd.ReflectType).Interface()
@@ -278,7 +278,7 @@ func (p *Parser) parseStructRuleLink(sd *Struct, value string) error {
 	if localFd == nil {
 		return fmt.Errorf("FRLink local field[%s] not found", localFieldName)
 	}
-	if !localFd.Type.Primitive() && !(localFd.Type == gexcels.FTArray && localFd.ElementType.Primitive()) {
+	if !localFd.Type.Primitive() && !(localFd.Type == gexcels.FTArray && localFd.GetElementType().Type.Primitive()) {
 		return fmt.Errorf("FRLink local field[%s] must be primitive", localFieldName)
 	}
 	rule := gexcels.NewFRLink(values[2], values[3])

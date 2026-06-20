@@ -102,12 +102,15 @@ func Parse(path string, options ...*Options) (*Parser, error) {
 
 // Parser excel配置表解析器
 type Parser struct {
-	path         string             // 配置路径
-	options      *Options           // 选项
-	Structs      []*Struct          // 解析出的结构体
-	structByName map[string]*Struct // 结构体名称映射
-	Tables       []*Table           // 解析出的配置表
-	tableByName  map[string]*Table  // 配置表名称映射
+	path             string             // 配置路径
+	options          *Options           // 选项
+	Structs          []*Struct          // 解析出的结构体
+	structByName     map[string]*Struct // 结构体名称映射
+	Tables           []*Table           // 解析出的配置表
+	tableByName      map[string]*Table  // 配置表名称映射
+	Enums            []*Enum            // 枚举列表
+	enumByName       map[string]*Enum   // 枚举名称映射
+	customTypeByName any                // 自定义类型名称映射
 }
 
 func newParser(path string, options *Options) *Parser {
@@ -118,6 +121,8 @@ func newParser(path string, options *Options) *Parser {
 		structByName: make(map[string]*Struct),
 		Tables:       make([]*Table, 0),
 		tableByName:  make(map[string]*Table),
+		Enums:        make([]*Enum, 0),
+		enumByName:   make(map[string]*Enum),
 	}
 	return p
 }

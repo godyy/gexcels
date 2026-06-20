@@ -56,54 +56,72 @@ func ParsePrimitiveFieldType(s string) FieldType {
 	return primitiveFieldStringTypes[s]
 }
 
+// 字段类型参数索引.
+const (
+	_              = iota
+	ftpName        // 类型名称. for FTStruct
+	ftpElementType // 元素类型. for FTArray
+)
+
 // FieldTypeInfo 字段类型信息
 type FieldTypeInfo struct {
-	Type        FieldType // 类型
-	ElementType FieldType // 元素类型
-	StructName  string    // 结构体名称
+	Type   FieldType   // 类型
+	params map[int]any // 参数
+}
+
+// setName 设置类型名称
+func (i *FieldTypeInfo) setName(name string) {
+	i.params[ftpName] = name
+}
+
+// GetName 获取类型名称
+func (i *FieldTypeInfo) GetName() string {
+	return i.params[ftpName].(string)
+}
+
+// setElementType 设置元素类型
+func (i *FieldTypeInfo) setElementType(et *FieldTypeInfo) {
+	i.params[ftpElementType] = et
+}
+
+// GetElementType 获取元素类型
+func (i *FieldTypeInfo) GetElementType() *FieldTypeInfo {
+	return i.params[ftpElementType].(*FieldTypeInfo)
 }
 
 // String 将 FieldTypeInfo 转换为字符串形式
 func (i *FieldTypeInfo) String() string {
-	s := primitiveFieldTypeStrings[i.Type]
-	if s != "" {
-		return s
+	switch i.Type {
+	case FTStruct:
+		return i.GetName()
+	case FTArray:
+		return "[]" + i.GetElementType().String()
+	default:
+		return primitiveFieldTypeStrings[i.Type]
 	}
+}
 
-	if i.Type == FTStruct {
-		return i.StructName
-	} else if i.Type == FTArray {
-		s = primitiveFieldTypeStrings[i.ElementType]
-		if s != "" {
-			return "[]" + s
-		}
-		if i.ElementType == FTStruct {
-			return "[]" + i.StructName
-		} else {
-			panic("gexcels: FieldType.String: element type invalid")
-		}
-	} else {
-		panic("gexcels: FieldType.String: field type invalid")
-	}
+func newFieldTypeInfo(ft FieldType) *FieldTypeInfo {
+	return &FieldTypeInfo{Type: ft, params: make(map[int]any)}
 }
 
 // NewPrimitiveFieldTypeInfo 创建primitive字段类型信息
 func NewPrimitiveFieldTypeInfo(ft FieldType) *FieldTypeInfo {
-	if ft.Primitive() {
-		panic("gexcels: NewPrimitiveFieldTypeInfo: field type must be primitive")
+	if !ft.Primitive() {
+		panic(fmt.Sprintf("gexcels: NewPrimitiveFieldTypeInfo: field type %d must be primitive", ft))
 	}
 	return &FieldTypeInfo{Type: ft}
 }
 
 // NewPrimitiveArrayFieldTypeInfo 创建primitive数组字段类型
 func NewPrimitiveArrayFieldTypeInfo(et FieldType) *FieldTypeInfo {
-	if et.Primitive() {
+	if !et.Primitive() {
 		panic("gexcels.NewPrimitiveArrayFieldType: element type must be primitive")
 	}
-	return &FieldTypeInfo{
-		Type:        FTArray,
-		ElementType: et,
-	}
+
+	info := newFieldTypeInfo(FTArray)
+	info.setElementType(NewPrimitiveFieldTypeInfo(et))
+	return info
 }
 
 // NewStructFieldTypeInfo 创建结构体字段类型信息
@@ -111,10 +129,9 @@ func NewStructFieldTypeInfo(structName string) *FieldTypeInfo {
 	if !MatchName(structName) {
 		panic("gexcels: NewStructFieldTypeInfo: struct name " + structName + " invalid")
 	}
-	return &FieldTypeInfo{
-		Type:       FTStruct,
-		StructName: structName,
-	}
+	info := newFieldTypeInfo(FTStruct)
+	info.setName(structName)
+	return info
 }
 
 // NewStructArrayFieldTypeInfo 创建结构体数组字段类型
@@ -122,19 +139,16 @@ func NewStructArrayFieldTypeInfo(structName string) *FieldTypeInfo {
 	if !MatchName(structName) {
 		panic("gexcels: NewStructFieldTypeInfo: struct name " + structName + " invalid")
 	}
-	return &FieldTypeInfo{
-		Type:        FTArray,
-		ElementType: FTStruct,
-		StructName:  structName,
-	}
+	info := newFieldTypeInfo(FTArray)
+	info.setElementType(NewStructFieldTypeInfo(structName))
+	return info
 }
 
 // ParseFieldTypeInfo 解析字段类型信息
 func ParseFieldTypeInfo(s string) (*FieldTypeInfo, error) {
 	var (
-		ft         FieldType
-		et         FieldType
-		structName string
+		ft FieldType
+		et FieldType
 	)
 
 	if strings.HasPrefix(s, "[]") {
@@ -148,20 +162,15 @@ func ParseFieldTypeInfo(s string) (*FieldTypeInfo, error) {
 			if !MatchName(s) {
 				return nil, fmt.Errorf("gexcels: ParseFieldTypeInfo: array element struct name %s invalid", s)
 			}
-			et = FTStruct
-			structName = s
+			return NewStructArrayFieldTypeInfo(s), nil
 		}
+		return NewPrimitiveArrayFieldTypeInfo(et), nil
 	} else if ft = ParsePrimitiveFieldType(s); ft == FTUnknown {
 		if !MatchName(s) {
 			return nil, fmt.Errorf("gexcels: ParseFieldTypeInfo: array element struct name %s invalid", s)
 		}
-		ft = FTStruct
-		structName = s
+		return NewStructFieldTypeInfo(s), nil
+	} else {
+		return NewPrimitiveFieldTypeInfo(ft), nil
 	}
-
-	return &FieldTypeInfo{
-		Type:        ft,
-		ElementType: et,
-		StructName:  structName,
-	}, nil
 }

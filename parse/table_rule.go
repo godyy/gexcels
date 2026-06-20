@@ -2,12 +2,13 @@ package parse
 
 import (
 	"fmt"
-	"github.com/godyy/gexcels"
-	"github.com/godyy/gexcels/internal/utils"
 	"math"
 	"reflect"
 	"sort"
 	"strings"
+
+	"github.com/godyy/gexcels"
+	"github.com/godyy/gexcels/internal/utils"
 )
 
 // TableLink 配置表链接
@@ -175,19 +176,27 @@ func (td *Table) addGroup(group string, index int, fieldName string) bool {
 
 // getFieldTableLinks 从字段fd中获取TableLink
 func (p *Parser) getFieldTableLinks(fd *gexcels.Field, fieldPath *[]string, links *[]*TableLink) {
-	if fd.Type.Primitive() || (fd.Type == gexcels.FTArray && fd.ElementType.Primitive()) {
+	switch {
+	case fd.Type.Primitive() || (fd.Type == gexcels.FTArray && fd.GetElementType().Type.Primitive()):
+		// primitive类型或者元素类型为primitive的数组
 		if ruleLink := fd.GetFRLink(); ruleLink != nil {
 			srcField := make([]string, len(*fieldPath)+1)
 			copy(srcField, *fieldPath)
 			srcField[len(srcField)-1] = fd.Name
 			*links = append(*links, newTableLink(srcField, ruleLink.TableName, ruleLink.FieldName))
 		}
-	} else if fd.Type == gexcels.FTStruct || fd.ElementType == gexcels.FTStruct {
-		sd := p.GetStructByName(fd.StructName)
+	case fd.Type == gexcels.FTStruct || (fd.Type == gexcels.FTArray && fd.GetElementType().Type == gexcels.FTStruct):
+		// 结构体或者元素为结构体的数组
+		structName := ""
+		if fd.Type == gexcels.FTStruct {
+			structName = fd.GetName()
+		} else {
+			structName = fd.GetElementType().GetName()
+		}
+		sd := p.GetStructByName(structName)
 		if sd == nil {
 			return
 		}
-
 		*fieldPath = append(*fieldPath, fd.Name)
 		for _, fd := range sd.Fields {
 			p.getFieldTableLinks(fd, fieldPath, links)
@@ -229,7 +238,7 @@ func (p *Parser) checkTableLinkTable(td *Table, link *TableLink) (errs []error) 
 				return []error{errTableLinkByTableLink(td.Name, link, "src field not found")}
 			}
 		}
-		if !srcField.Type.Primitive() && !(srcField.Type == gexcels.FTArray && srcField.ElementType.Primitive()) {
+		if !srcField.Type.Primitive() && !(srcField.Type == gexcels.FTArray && srcField.GetElementType().Type.Primitive()) {
 			return []error{errTableLinkByTableLink(td.Name, link, "src field type not primitive")}
 		}
 	}
@@ -273,7 +282,7 @@ func (p *Parser) checkTableLinkTable(td *Table, link *TableLink) (errs []error) 
 func checkFieldTypeOnLink(srcField, dstField *gexcels.Field) bool {
 	srcFieldType := srcField.Type
 	if srcFieldType == gexcels.FTArray {
-		srcFieldType = srcField.ElementType
+		srcFieldType = srcField.GetElementType().Type
 	}
 	return srcFieldType == dstField.Type
 }

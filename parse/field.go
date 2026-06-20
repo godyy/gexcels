@@ -149,8 +149,9 @@ func (p *Parser) parseArrayFieldValue(fd *gexcels.Field, s string) (interface{},
 		return nil, nil
 	}
 
-	if fd.ElementType.Primitive() {
-		array := makePrimitiveArray(fd.ElementType)
+	elementType := fd.GetElementType()
+	if elementType.Type.Primitive() {
+		array := makePrimitiveArray(elementType.Type)
 		if err := json.Unmarshal([]byte(s), &array); err != nil {
 			return nil, err
 		}
@@ -158,10 +159,10 @@ func (p *Parser) parseArrayFieldValue(fd *gexcels.Field, s string) (interface{},
 			return nil, errArrayLengthExceedLimit
 		}
 		return array, nil
-	} else if fd.ElementType == gexcels.FTStruct {
-		sd := p.GetStructByName(fd.StructName)
+	} else if elementType.Type == gexcels.FTStruct {
+		sd := p.GetStructByName(elementType.GetName())
 		if sd == nil {
-			return nil, errStructNotDefine(fd.StructName)
+			return nil, errStructNotDefine(elementType.GetName())
 		}
 		arrayPtr := reflect.New(reflect.SliceOf(reflect.PointerTo(sd.ReflectType)))
 		if err := json.Unmarshal([]byte(s), arrayPtr.Interface()); err != nil {
@@ -173,7 +174,7 @@ func (p *Parser) parseArrayFieldValue(fd *gexcels.Field, s string) (interface{},
 		}
 		return array.Interface(), nil
 	} else {
-		return nil, errArrayElementInvalid(fd.ElementType)
+		return nil, errArrayElementInvalid(elementType.Type)
 	}
 }
 
@@ -183,8 +184,14 @@ func (p *Parser) getNestedField(fd *gexcels.Field, fieldPath []string, depth int
 		return fd
 	}
 
-	if fd.Type == gexcels.FTStruct || (fd.Type == gexcels.FTArray && fd.ElementType == gexcels.FTStruct) {
-		sd := p.GetStructByName(fd.StructName)
+	if fd.Type == gexcels.FTStruct || (fd.Type == gexcels.FTArray && fd.GetElementType().Type == gexcels.FTStruct) {
+		structName := ""
+		if fd.Type == gexcels.FTStruct {
+			structName = fd.GetName()
+		} else {
+			structName = fd.GetElementType().GetName()
+		}
+		sd := p.GetStructByName(structName)
 		nestedFd := sd.GetFieldByName(fieldPath[depth])
 		if nestedFd == nil {
 			return nil
@@ -200,25 +207,26 @@ func (p *Parser) getFieldReflectType(fd *gexcels.Field) (reflect.Type, error) {
 	if fd.Type.Primitive() {
 		return getPrimitiveReflectType(fd.Type), nil
 	} else if fd.Type == gexcels.FTStruct {
-		sd := p.GetStructByName(fd.StructName)
+		sd := p.GetStructByName(fd.GetName())
 		if sd == nil {
-			return nil, errStructNotDefine(fd.StructName)
+			return nil, errStructNotDefine(fd.GetName())
 		}
 		return sd.ReflectType, nil
 	} else if fd.Type == gexcels.FTArray {
-		var elementType reflect.Type
-		if fd.ElementType.Primitive() {
-			elementType = getPrimitiveReflectType(fd.ElementType)
-		} else if fd.ElementType == gexcels.FTStruct {
-			sd := p.GetStructByName(fd.StructName)
+		var elementReflectType reflect.Type
+		elementType := fd.GetElementType()
+		if elementType.Type.Primitive() {
+			elementReflectType = getPrimitiveReflectType(elementType.Type)
+		} else if elementType.Type == gexcels.FTStruct {
+			sd := p.GetStructByName(elementType.GetName())
 			if sd == nil {
-				return nil, fmt.Errorf("array element struct %s not define", fd.StructName)
+				return nil, fmt.Errorf("array element struct %s not define", elementType.GetName())
 			}
-			elementType = reflect.PointerTo(sd.ReflectType)
+			elementReflectType = reflect.PointerTo(sd.ReflectType)
 		} else {
-			panic(errArrayElementInvalid(fd.ElementType))
+			panic(errArrayElementInvalid(elementType.Type))
 		}
-		return reflect.SliceOf(elementType), nil
+		return reflect.SliceOf(elementReflectType), nil
 	} else {
 		panic(errFieldTypeInvalid(fd.Type))
 	}
