@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/godyy/gexcels"
-	"github.com/godyy/gexcels/internal/utils"
 )
 
 // TableLink 配置表链接
@@ -312,13 +311,9 @@ func checkTableLinkValue(srcTable *Table, srcValue any, dstTable *Table, dstFiel
 				errs = append(errs, err...)
 			}
 		}
-	} else if v.Kind() == reflect.Pointer {
-		vv := v.Elem()
-		if vv.Kind() != reflect.Struct {
-			return []error{errTableLink(srcTable.Name, fieldPath[:depth], dstTable.Name, dstField.Name, "value (%+v) not struct", vv.Interface())}
-		}
-		fieldName := utils.CamelCase(fieldPath[depth], true)
-		vv = vv.FieldByName(fieldName)
+	} else if v.Kind() == reflect.Map {
+		fieldName := fieldPath[depth]
+		vv := v.MapIndex(reflect.ValueOf(fieldName))
 		if !vv.IsValid() {
 			return nil
 		}

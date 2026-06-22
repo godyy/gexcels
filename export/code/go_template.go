@@ -981,7 +981,7 @@ type jsonLoadHelper struct{}
 var loadHelper = &jsonLoadHelper{}
 
 func (h *jsonLoadHelper) load(basePath string, tableName string, v any) error {
-	filePath := filepath.Join(basePath, tableName)
+	filePath := filepath.Join(basePath, tableName+".json")
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return err
@@ -1032,7 +1032,7 @@ func (e *goExporter) GenNormalTableLoadBytes(td *parse.Table) string {
 var templateGoGlobalLoadBytes = template.Must(template.New("go_global_table_load_bytes").
 	Parse(`// load 加载数据
 func (t *{{.Exporter.GetTableStructName .Table}}) load(basePath string) error {
-	return loadHelper.load(basePath, {{.Exporter.GetTableNameConstName .Table}}, t)
+	return loadHelper.loadGlobal(basePath, {{.Exporter.GetTableNameConstName .Table}}, t)
 }`))
 
 // GenGlobalTableLoadBytes 生成go全局配置表bytes加载代码
@@ -1115,12 +1115,21 @@ var loadHelper = &bytesLoadHelper{}
 type bytesLoadHelper struct{}
 
 func (h *bytesLoadHelper) load(basePath string, tableName string, v any) error {
-	filePath := filepath.Join(basePath, tableName)
+	filePath := filepath.Join(basePath, tableName+".bytes")
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return err
 	}
 	return h.decodeEntries(data, v)
+}
+
+func (h *bytesLoadHelper) loadGlobal(basePath string, tableName string, v any) error {
+	filePath := filepath.Join(basePath, tableName+".bytes")
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return err
+	}
+	return h.decodeGlobal(data, v)
 }
 
 func (h *bytesLoadHelper) decodeFieldIndex(buf *bytes.Buffer) (int16, error) {

@@ -10,7 +10,6 @@ import (
 	"github.com/godyy/gexcels"
 	internal_define "github.com/godyy/gexcels/export"
 	"github.com/godyy/gexcels/internal/log"
-	"github.com/godyy/gexcels/internal/utils"
 	"github.com/godyy/gexcels/parse"
 	"github.com/godyy/gutils/buffer/bytes"
 	pkg_errors "github.com/pkg/errors"
@@ -151,7 +150,7 @@ func (e *bytesExporter) encodeFieldValue(fd *gexcels.Field, index int, value any
 	if fd.Type.Primitive() {
 		return e.encodePrimitiveValue(fd.Type, value)
 	} else if fd.Type == gexcels.FTEnum {
-		return e.encodePrimitiveValue(fd.Type, value)
+		return e.encodeEnumField(e.parser.GetEnum(fd.GetName()), value)
 	} else if fd.Type == gexcels.FTStruct {
 		return e.encodeStructField(e.parser.GetStructByName(fd.GetName()), value)
 	} else if fd.Type == gexcels.FTArray {
@@ -183,14 +182,19 @@ func (e *bytesExporter) encodePrimitiveValue(ft gexcels.FieldType, value any) er
 	}
 }
 
+// encodeEnumField 编码枚举字段
+func (e *bytesExporter) encodeEnumField(enum *parse.Enum, value any) error {
+	return e.encodePrimitiveValue(enum.Type, value)
+}
+
 // encodeStructField 编码struct字段
 func (e *bytesExporter) encodeStructField(sd *parse.Struct, value any) error {
 	var (
-		v         = reflect.ValueOf(value).Elem()
+		v         = reflect.ValueOf(value)
 		lastIndex int
 	)
 	for i, fd := range sd.Fields {
-		fv := v.FieldByName(utils.CamelCase(fd.Name, true))
+		fv := v.MapIndex(reflect.ValueOf(fd.Name))
 		if !fv.IsValid() {
 			continue
 		}
@@ -222,9 +226,10 @@ func (e *bytesExporter) encodeArrayValue(fd *gexcels.Field, value any) error {
 			}
 		}
 	} else if elementType.Type == gexcels.FTEnum {
+		enum := e.parser.GetEnum(elementType.GetName())
 		for i := 0; i < v.Len(); i++ {
 			vv := v.Index(i)
-			if err := e.encodePrimitiveValue(elementType.Type, vv.Interface()); err != nil {
+			if err := e.encodeEnumField(enum, vv.Interface()); err != nil {
 				return pkg_errors.WithMessagef(err, "field[%s][%d]", fd.Name, i)
 			}
 		}

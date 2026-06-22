@@ -12,7 +12,6 @@ import (
 	"github.com/godyy/gexcels/export"
 	internal_define "github.com/godyy/gexcels/export"
 	"github.com/godyy/gexcels/internal/log"
-	"github.com/godyy/gexcels/internal/utils"
 	"github.com/godyy/gexcels/parse"
 	pkg_errors "github.com/pkg/errors"
 )
@@ -128,14 +127,11 @@ func (e *jsonExporter) marshalJsonFieldValue(fd *gexcels.Field, val any) ([]byte
 // marshalJsonStructValue 编码结构体值
 func (e *jsonExporter) marshalJsonStructValue(sd *parse.Struct, val any) ([]byte, error) {
 	refVal := reflect.ValueOf(val)
-	if refVal.Kind() == reflect.Pointer {
-		refVal = refVal.Elem()
-	}
 	n := 0
 	buf := bytes.NewBuffer(nil)
 	buf.WriteString("{")
 	for _, fd := range sd.Fields {
-		refFieldVal := refVal.FieldByName(utils.CamelCase(fd.Name, true))
+		refFieldVal := refVal.MapIndex(reflect.ValueOf(fd.Name))
 		if !refFieldVal.IsValid() {
 			continue
 		}
