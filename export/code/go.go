@@ -111,6 +111,14 @@ func (e *goExporter) exportEnumsFile() error {
 	}
 
 	log.PrintfGreen("export code: go: enums to [%s]", filePath)
+
+	content = e.GenEnumsOtherFile()
+	filePath = filepath.Join(e.path, e.kindOptions.PkgName+"_enums_other.go")
+	if err := os.WriteFile(filePath, ([]byte)(content), os.ModePerm); err != nil {
+		return pkg_errors.WithMessagef(err, "export code: go: enums other to [%s]", filePath)
+	}
+
+	log.PrintfGreen("export code: go: enums other to [%s]", filePath)
 	return nil
 }
 
