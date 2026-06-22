@@ -303,7 +303,7 @@ func (p *Parser) checkLinksBetweenTable() (errs []error) {
 
 // checkTableLinkValue 字段值链接检查
 // 检查value根据filePath指定的字段路径，是否能攻能成功链接到dstTable中的目标字段
-func checkTableLinkValue(srcTable *Table, srcValue interface{}, dstTable *Table, dstField *gexcels.Field, fieldPath []string, depth int) (errs []error) {
+func checkTableLinkValue(srcTable *Table, srcValue any, dstTable *Table, dstField *gexcels.Field, fieldPath []string, depth int) (errs []error) {
 	v := reflect.ValueOf(srcValue)
 	if v.Kind() == reflect.Slice {
 		for i := 0; i < v.Len(); i++ {
@@ -346,7 +346,7 @@ func checkTableLinkValue(srcTable *Table, srcValue interface{}, dstTable *Table,
 }
 
 // 尝试将val转换为ft指定的类型
-func convertValue2PrimitiveFieldType(val interface{}, ft gexcels.FieldType) (interface{}, error) {
+func convertValue2PrimitiveFieldType(val any, ft gexcels.FieldType) (any, error) {
 	switch ft {
 	case gexcels.FTInt32:
 		switch val.(type) {

@@ -110,7 +110,7 @@ func (e *jsonExporter) marshalJsonTableEntry(td *parse.Table, entry gexcels.Tabl
 }
 
 // marshalJsonFieldValue 编码字段值
-func (e *jsonExporter) marshalJsonFieldValue(fd *gexcels.Field, val interface{}) ([]byte, error) {
+func (e *jsonExporter) marshalJsonFieldValue(fd *gexcels.Field, val any) ([]byte, error) {
 	if fd.Type.Primitive() {
 		return json.Marshal(val)
 	} else if fd.Type == gexcels.FTEnum {
@@ -126,7 +126,7 @@ func (e *jsonExporter) marshalJsonFieldValue(fd *gexcels.Field, val interface{})
 }
 
 // marshalJsonStructValue 编码结构体值
-func (e *jsonExporter) marshalJsonStructValue(sd *parse.Struct, val interface{}) ([]byte, error) {
+func (e *jsonExporter) marshalJsonStructValue(sd *parse.Struct, val any) ([]byte, error) {
 	refVal := reflect.ValueOf(val)
 	if refVal.Kind() == reflect.Pointer {
 		refVal = refVal.Elem()
@@ -157,7 +157,7 @@ func (e *jsonExporter) marshalJsonStructValue(sd *parse.Struct, val interface{})
 }
 
 // marshalJsonArrayValue 编码数组值
-func (e *jsonExporter) marshalJsonArrayValue(fd *gexcels.Field, val interface{}) ([]byte, error) {
+func (e *jsonExporter) marshalJsonArrayValue(fd *gexcels.Field, val any) ([]byte, error) {
 	elementType := fd.GetElementType()
 	if elementType.Type.Primitive() {
 		return json.Marshal(val)

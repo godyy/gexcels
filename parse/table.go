@@ -21,8 +21,8 @@ var tableTagRegexp = regexp.MustCompile(gexcels.TagPattern + `(?:` + gexcels.Tag
 type Table struct {
 	*gexcels.Table                                    // 基础数据
 	Entries        []gexcels.TableEntry               // for normal
-	entryByID      map[interface{}]gexcels.TableEntry // for normal
-	entryByName    map[string]interface{}             // for global
+	entryByID      map[any]gexcels.TableEntry // for normal
+	entryByName    map[string]any             // for global
 	uniqueValues   map[string]bool                    // 唯一键值存在映射 [fieldName+fieldValue]
 
 	links         []*TableLink         // 外链规则
@@ -37,24 +37,24 @@ func newTable(name, desc string, isGlobal bool) *Table {
 }
 
 // addEntry 添加条目
-func (td *Table) addEntry(id interface{}, entry gexcels.TableEntry) {
+func (td *Table) addEntry(id any, entry gexcels.TableEntry) {
 	td.Entries = append(td.Entries, entry)
 	td.entryByID[id] = entry
 }
 
 // hasEntry 是否存在条目
-func (td *Table) hasEntry(id interface{}) bool {
+func (td *Table) hasEntry(id any) bool {
 	_, ok := td.entryByID[id]
 	return ok
 }
 
 // addEntryByName 通过名称添加条目
-func (td *Table) addEntryByName(name string, entry interface{}) {
+func (td *Table) addEntryByName(name string, entry any) {
 	td.entryByName[name] = entry
 }
 
 // GetEntryByName 通过名称获取条目
-func (td *Table) GetEntryByName(name string) interface{} {
+func (td *Table) GetEntryByName(name string) any {
 	if len(td.entryByName) <= 0 {
 		return nil
 	}
@@ -62,7 +62,7 @@ func (td *Table) GetEntryByName(name string) interface{} {
 }
 
 // addUniqueValue 添加唯一值
-func (td *Table) addUniqueValue(fieldName string, value interface{}) bool {
+func (td *Table) addUniqueValue(fieldName string, value any) bool {
 	s := convertUniqueValue2String(value)
 	key := fieldName + ":" + s
 	if td.uniqueValues == nil {
@@ -78,7 +78,7 @@ func (td *Table) addUniqueValue(fieldName string, value interface{}) bool {
 }
 
 // hasUniqueValue 是否存在唯一值
-func (td *Table) hasUniqueValue(fieldName string, value interface{}) bool {
+func (td *Table) hasUniqueValue(fieldName string, value any) bool {
 	if td.uniqueValues == nil {
 		return false
 	}
@@ -341,13 +341,13 @@ func (p *Parser) parseTableEntries(td *Table, sheet *xlsx.Sheet) error {
 	}
 
 	td.Entries = make([]gexcels.TableEntry, 0, entryCount)
-	td.entryByID = make(map[interface{}]gexcels.TableEntry, entryCount)
+	td.entryByID = make(map[any]gexcels.TableEntry, entryCount)
 
 	var (
 		row *xlsx.Row
 		fd  *gexcels.TableField
-		id  interface{}
-		val interface{}
+		id  any
+		val any
 		err error
 	)
 
@@ -424,7 +424,7 @@ func (p *Parser) parseGlobalTable(sheet *xlsx.Sheet, name, desc string) (*Table,
 	fieldCount := sheet.MaxRow - gexcels.GlobalTableSkipRows
 	td.Fields = make([]*gexcels.TableField, 0, fieldCount)
 	td.FieldByName = make(map[string]*gexcels.TableField, fieldCount)
-	td.entryByName = make(map[string]interface{}, fieldCount)
+	td.entryByName = make(map[string]any, fieldCount)
 
 	for i := gexcels.GlobalTableSkipRows; i < sheet.MaxRow; i++ {
 		row, err := sheet.Row(i)
@@ -502,7 +502,7 @@ func (p *Parser) parseGlobalTableField(td *Table, row *xlsx.Row) error {
 }
 
 // convertUniqueValue2String 将唯一值转换为字符串
-func convertUniqueValue2String(v interface{}) string {
+func convertUniqueValue2String(v any) string {
 	switch o := v.(type) {
 	case string:
 		return o

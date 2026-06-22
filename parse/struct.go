@@ -217,7 +217,7 @@ func (p *Parser) parseStructField(def []string) (*gexcels.Field, error) {
 }
 
 // parseStructFieldValue 解析结构体字段值
-func (p *Parser) parseStructFieldValue(fd *gexcels.Field, s string) (interface{}, error) {
+func (p *Parser) parseStructFieldValue(fd *gexcels.Field, s string) (any, error) {
 	if s == "" {
 		return nil, nil
 	}

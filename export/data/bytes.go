@@ -141,7 +141,7 @@ func (e *bytesExporter) encodeTableEntry(td *parse.Table, entry gexcels.TableEnt
 }
 
 // encodeFieldValue 编码字段值
-func (e *bytesExporter) encodeFieldValue(fd *gexcels.Field, index int, value interface{}) error {
+func (e *bytesExporter) encodeFieldValue(fd *gexcels.Field, index int, value any) error {
 	// field index
 	if _, err := e.buf.WriteVarint16(int16(index + 1)); err != nil {
 		return pkg_errors.WithMessagef(err, "field[%s] index", fd.Name)
@@ -162,7 +162,7 @@ func (e *bytesExporter) encodeFieldValue(fd *gexcels.Field, index int, value int
 }
 
 // encodePrimitiveValue 编码primitive值
-func (e *bytesExporter) encodePrimitiveValue(ft gexcels.FieldType, value interface{}) error {
+func (e *bytesExporter) encodePrimitiveValue(ft gexcels.FieldType, value any) error {
 	switch ft {
 	case gexcels.FTInt32:
 		_, err := e.buf.WriteVarint32(value.(int32))
@@ -184,7 +184,7 @@ func (e *bytesExporter) encodePrimitiveValue(ft gexcels.FieldType, value interfa
 }
 
 // encodeStructField 编码struct字段
-func (e *bytesExporter) encodeStructField(sd *parse.Struct, value interface{}) error {
+func (e *bytesExporter) encodeStructField(sd *parse.Struct, value any) error {
 	var (
 		v         = reflect.ValueOf(value).Elem()
 		lastIndex int
@@ -208,7 +208,7 @@ func (e *bytesExporter) encodeStructField(sd *parse.Struct, value interface{}) e
 }
 
 // encodeArrayValue 编码数组值
-func (e *bytesExporter) encodeArrayValue(fd *gexcels.Field, value interface{}) error {
+func (e *bytesExporter) encodeArrayValue(fd *gexcels.Field, value any) error {
 	v := reflect.ValueOf(value)
 	if _, err := e.buf.WriteVarint16(int16(v.Len())); err != nil {
 		return pkg_errors.WithMessagef(err, "field[%s] length", fd.Name)

@@ -1157,7 +1157,7 @@ func (h *bytesLoadHelper) loadLine(dataBuf *bufio.Reader, lineBuf *bytes.Buffer)
 	return nil
 }
 
-func (h *bytesLoadHelper) decodeEntries(data []byte, val interface{}) error {
+func (h *bytesLoadHelper) decodeEntries(data []byte, val any) error {
 	var (
 		dataBuf = bufio.NewReader(bytes.NewBuffer(data))
 		lineBuf bytes.Buffer
@@ -1198,7 +1198,7 @@ func (h *bytesLoadHelper) decodeEntries(data []byte, val interface{}) error {
 	return nil
 }
 
-func (h *bytesLoadHelper) decodeGlobal(data []byte, val interface{}) error {
+func (h *bytesLoadHelper) decodeGlobal(data []byte, val any) error {
 	var (
 		dataBuf = bufio.NewReader(bytes.NewBuffer(data))
 		lineBuf bytes.Buffer

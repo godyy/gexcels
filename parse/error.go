@@ -41,7 +41,7 @@ var (
 )
 
 // errFieldTypeInvalid 字段类型无效
-func errFieldTypeInvalid(ft interface{}) error {
+func errFieldTypeInvalid(ft any) error {
 	return fmt.Errorf("field type %v invalid", ft)
 }
 
@@ -114,7 +114,7 @@ func (err *tableLinkError) Error() string {
 }
 
 // errTableLink 生成配置表链接错误
-func errTableLink(srcTable string, srcField []string, dstTable string, dstField string, f string, args ...interface{}) *tableLinkError {
+func errTableLink(srcTable string, srcField []string, dstTable string, dstField string, f string, args ...any) *tableLinkError {
 	return &tableLinkError{
 		srcTable: srcTable,
 		srcField: srcField,
@@ -125,6 +125,6 @@ func errTableLink(srcTable string, srcField []string, dstTable string, dstField 
 }
 
 // errTableLinkByTableLink 通过配置表link规则生成配置表链接错误
-func errTableLinkByTableLink(srcTable string, link *TableLink, f string, args ...interface{}) *tableLinkError {
+func errTableLinkByTableLink(srcTable string, link *TableLink, f string, args ...any) *tableLinkError {
 	return errTableLink(srcTable, link.srcField, link.dstTable, link.dstField, f, args...)
 }

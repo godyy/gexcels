@@ -72,7 +72,7 @@ func (tf *TableField) Unique() bool {
 }
 
 // TableEntry 配置条目数据
-type TableEntry map[string]interface{}
+type TableEntry map[string]any
 
 // Table 配置表定义
 type Table struct {
@@ -136,7 +136,7 @@ func (t *Table) GetFieldID() *TableField {
 }
 
 // convertUniqueValue2String 将唯一值转换为字符串
-func convertUniqueValue2String(v interface{}) string {
+func convertUniqueValue2String(v any) string {
 	switch o := v.(type) {
 	case string:
 		return o

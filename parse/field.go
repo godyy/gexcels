@@ -39,7 +39,7 @@ func getPrimitiveReflectType(ft gexcels.FieldType) reflect.Type {
 }
 
 // parsePrimitiveValue 解析primitive字段值
-func parsePrimitiveValue(ft gexcels.FieldType, s string) (interface{}, error) {
+func parsePrimitiveValue(ft gexcels.FieldType, s string) (any, error) {
 	switch ft {
 	case gexcels.FTInt32:
 		s = strings.TrimSpace(s)
@@ -185,7 +185,7 @@ func (p *Parser) parseFieldTypeInfo(typeStr string) (*gexcels.FieldTypeInfo, err
 }
 
 // parseFieldValue 解析字段值
-func (p *Parser) parseFieldValue(fd *gexcels.Field, s string) (interface{}, error) {
+func (p *Parser) parseFieldValue(fd *gexcels.Field, s string) (any, error) {
 	s = strings.TrimSpace(s)
 
 	if fd.Type == gexcels.FTEnum {
@@ -220,7 +220,7 @@ func (p *Parser) parseEnumFieldValue(fd *gexcels.Field, s string) (any, error) {
 }
 
 // parseArrayFieldValue 解析数组字段值
-func (p *Parser) parseArrayFieldValue(fd *gexcels.Field, s string) (interface{}, error) {
+func (p *Parser) parseArrayFieldValue(fd *gexcels.Field, s string) (any, error) {
 	if s == "" {
 		return nil, nil
 	}
