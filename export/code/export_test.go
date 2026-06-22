@@ -43,7 +43,9 @@ func TestExportGoBson(t *testing.T) {
 	excelsPath := "../../internal/test/excels"
 	exportGoPath := "../../internal/test/export/go_bson"
 
-	p, err := parse.Parse(excelsPath, &parse.Options{OnlyFields: false})
+	p, err := parse.Parse(excelsPath, &parse.Options{
+		OnlyFields: false,
+	})
 	if err != nil {
 		t.Fatalf("parse %s, %v", excelsPath, err)
 	}

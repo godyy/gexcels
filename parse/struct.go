@@ -52,7 +52,7 @@ func (p *Parser) GetStructByName(name string) *Struct {
 }
 
 // parseStructs 解析结构体定义
-func (p *Parser) parseStructs(files []*priorityFileInfo) error {
+func (p *Parser) parseStructs(files []string) error {
 	for _, file := range files {
 		if err := p.parseStructFile(file); err != nil {
 			return err
@@ -65,8 +65,8 @@ func (p *Parser) parseStructs(files []*priorityFileInfo) error {
 var structSheetNameRegexp = regexp.MustCompile(`^(.*)\|(Struct\w*)(?:\.([0-9]*))?`)
 
 // parseStructFile 解析结构体定义文件
-func (p *Parser) parseStructFile(info *priorityFileInfo) error {
-	file, err := xlsx.OpenFile(info.path)
+func (p *Parser) parseStructFile(path string) error {
+	file, err := xlsx.OpenFile(path)
 	if err != nil {
 		return err
 	}
@@ -91,7 +91,7 @@ func (p *Parser) parseStructFile(info *priorityFileInfo) error {
 
 	for _, sheet := range sheets {
 		if err := p.parseStructSheet(sheet.Sheet); err != nil {
-			return pkg_errors.WithMessagef(err, "struct file(%s).sheet(%s)", info.path, sheet.Name)
+			return pkg_errors.WithMessagef(err, "struct file(%s).sheet(%s)", path, sheet.Name)
 		}
 	}
 	return nil

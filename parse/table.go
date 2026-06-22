@@ -19,11 +19,11 @@ var tableTagRegexp = regexp.MustCompile(gexcels.TagPattern + `(?:` + gexcels.Tag
 
 // Table 配置表定义
 type Table struct {
-	*gexcels.Table                                    // 基础数据
-	Entries        []gexcels.TableEntry               // for normal
+	*gexcels.Table                            // 基础数据
+	Entries        []gexcels.TableEntry       // for normal
 	entryByID      map[any]gexcels.TableEntry // for normal
 	entryByName    map[string]any             // for global
-	uniqueValues   map[string]bool                    // 唯一键值存在映射 [fieldName+fieldValue]
+	uniqueValues   map[string]bool            // 唯一键值存在映射 [fieldName+fieldValue]
 
 	links         []*TableLink         // 外链规则
 	CompositeKeys []*TableCompositeKey // 组合键
@@ -105,7 +105,7 @@ func (p *Parser) hasTable(name string) bool {
 }
 
 // parseTables 解析配置表
-func (p *Parser) parseTables(files []*tableFileInfo) error {
+func (p *Parser) parseTables(files []string) error {
 	for _, file := range files {
 		if err := p.parseTableFile(file); err != nil {
 			return err
@@ -115,8 +115,8 @@ func (p *Parser) parseTables(files []*tableFileInfo) error {
 }
 
 // parseTableFile 解析配置表文件
-func (p *Parser) parseTableFile(info *tableFileInfo) error {
-	file, err := xlsx.OpenFile(info.path)
+func (p *Parser) parseTableFile(path string) error {
+	file, err := xlsx.OpenFile(path)
 	if err != nil {
 		return err
 	}
@@ -126,13 +126,13 @@ func (p *Parser) parseTableFile(info *tableFileInfo) error {
 			if errors.Is(err, errSheetNameInvalid) {
 				continue
 			}
-			return pkg_errors.WithMessagef(err, "[%s][%s]", info.path, sheet.Name)
+			return pkg_errors.WithMessagef(err, "[%s][%s]", path, sheet.Name)
 		}
 		if p.hasTable(td.Name) {
-			return fmt.Errorf("[%s][%s]: table name duplicate", info.path, sheet.Name)
+			return fmt.Errorf("[%s][%s]: table name duplicate", path, sheet.Name)
 		}
 		p.addTable(td)
-		log.PrintfGreen("[%s][%s] parsed", info.path, sheet.Name)
+		log.PrintfGreen("[%s][%s] parsed", path, sheet.Name)
 	}
 	return nil
 }

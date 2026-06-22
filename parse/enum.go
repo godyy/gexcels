@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"sort"
-	"strconv"
 
 	"github.com/godyy/gexcels"
 	pkg_errors "github.com/pkg/errors"
@@ -68,7 +66,7 @@ func (p *Parser) GetEnum(name string) *Enum {
 }
 
 // parseEnums 解析枚举.
-func (p *Parser) parseEnums(enumFiles []*priorityFileInfo) error {
+func (p *Parser) parseEnums(enumFiles []string) error {
 	for _, file := range enumFiles {
 		if err := p.parseEnumFile(file); err != nil {
 			return err
@@ -78,36 +76,23 @@ func (p *Parser) parseEnums(enumFiles []*priorityFileInfo) error {
 }
 
 // enumSheetNameRegexp 枚举sheet名匹配正则表达式
-var enumSheetNameRegexp = regexp.MustCompile(`^(.*)\|(Enum\w*)(?:\.([0-9]*))?`)
+var enumSheetNameRegexp = regexp.MustCompile(`^(.*)\|(Enum\w*)`)
 
 // parseEnumFile 解析枚举文件.
-func (p *Parser) parseEnumFile(info *priorityFileInfo) error {
-	file, err := xlsx.OpenFile(info.path)
+func (p *Parser) parseEnumFile(path string) error {
+	file, err := xlsx.OpenFile(path)
 	if err != nil {
 		return err
 	}
 
-	sheets := make([]*prioritySheetInfo, 0, len(file.Sheets))
 	for _, sheet := range file.Sheets {
 		matches := enumSheetNameRegexp.FindStringSubmatch(sheet.Name)
-		if len(matches) != 4 {
+		if len(matches) != 3 {
 			continue
 		}
 
-		priority, _ := strconv.Atoi(matches[3])
-		sheets = append(sheets, &prioritySheetInfo{
-			Sheet:    sheet,
-			priority: priority,
-		})
-	}
-
-	sort.SliceStable(sheets, func(i, j int) bool {
-		return sheets[i].priority < sheets[j].priority
-	})
-
-	for _, sheet := range sheets {
-		if err := p.parseEnumSheet(sheet.Sheet); err != nil {
-			return pkg_errors.WithMessagef(err, "enum file(%s).sheet(%s)", info.path, sheet.Name)
+		if err := p.parseEnumSheet(sheet); err != nil {
+			return pkg_errors.WithMessagef(err, "enum file(%s).sheet(%s)", path, sheet.Name)
 		}
 	}
 	return nil
