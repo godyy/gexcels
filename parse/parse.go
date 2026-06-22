@@ -102,27 +102,28 @@ func Parse(path string, options ...*Options) (*Parser, error) {
 
 // Parser excel配置表解析器
 type Parser struct {
-	path             string             // 配置路径
-	options          *Options           // 选项
-	Structs          []*Struct          // 解析出的结构体
-	structByName     map[string]*Struct // 结构体名称映射
-	Tables           []*Table           // 解析出的配置表
-	tableByName      map[string]*Table  // 配置表名称映射
-	Enums            []*Enum            // 枚举列表
-	enumByName       map[string]*Enum   // 枚举名称映射
-	customTypeByName any                // 自定义类型名称映射
+	path             string                            // 配置路径
+	options          *Options                          // 选项
+	Structs          []*Struct                         // 解析出的结构体
+	structByName     map[string]*Struct                // 结构体名称映射
+	Tables           []*Table                          // 解析出的配置表
+	tableByName      map[string]*Table                 // 配置表名称映射
+	Enums            []*Enum                           // 枚举列表
+	enumByName       map[string]*Enum                  // 枚举名称映射
+	customFieldTypes map[string]*gexcels.FieldTypeInfo // 自定义字段类型
 }
 
 func newParser(path string, options *Options) *Parser {
 	p := &Parser{
-		path:         path,
-		options:      options,
-		Structs:      make([]*Struct, 0),
-		structByName: make(map[string]*Struct),
-		Tables:       make([]*Table, 0),
-		tableByName:  make(map[string]*Table),
-		Enums:        make([]*Enum, 0),
-		enumByName:   make(map[string]*Enum),
+		path:             path,
+		options:          options,
+		Structs:          make([]*Struct, 0),
+		structByName:     make(map[string]*Struct),
+		Tables:           make([]*Table, 0),
+		tableByName:      make(map[string]*Table),
+		Enums:            make([]*Enum, 0),
+		enumByName:       make(map[string]*Enum),
+		customFieldTypes: make(map[string]*gexcels.FieldTypeInfo),
 	}
 	return p
 }
@@ -137,16 +138,20 @@ func (p *Parser) checkTag(tag string) (bool, bool) {
 }
 
 func (p *Parser) parse() error {
-	structs, tables, err := p.searchFiles()
-	if err != nil {
+	result := p.searchFiles()
+	if result.err != nil {
+		return pkg_errors.WithMessage(result.err, "parse")
+	}
+
+	if err := p.parseEnums(result.enumFiles); err != nil {
 		return pkg_errors.WithMessage(err, "parse")
 	}
 
-	if err := p.parseStructs(structs); err != nil {
+	if err := p.parseStructs(result.structFiles); err != nil {
 		return pkg_errors.WithMessage(err, "parse")
 	}
 
-	if err := p.parseTables(tables); err != nil {
+	if err := p.parseTables(result.tableFiles); err != nil {
 		return pkg_errors.WithMessage(err, "parse")
 	}
 
@@ -160,8 +165,8 @@ func (p *Parser) parse() error {
 	return nil
 }
 
-// structFileInfo 结构体文件信息
-type structFileInfo struct {
+// priorityFileInfo 枚举文件信息
+type priorityFileInfo struct {
 	path     string // 路径
 	priority int    // 优先级
 }
@@ -174,8 +179,16 @@ type tableFileInfo struct {
 // structFileNameRegexp 结构体文件名匹配正则表达式
 var structFileNameRegexp = regexp.MustCompile(`^(?:[^.]*\.)?struct(?:\.([0-9]*))?$`)
 
+// enumFileNameRegexp 枚举文件名匹配正则表达式
+var enumFileNameRegexp = regexp.MustCompile(`^(?:[^.]*\.)?enum(?:\.([0-9]*))?$`)
+
 // searchFiles 搜索文件
-func (p *Parser) searchFiles() (structFiles []*structFileInfo, tableFiles []*tableFileInfo, err error) {
+func (p *Parser) searchFiles() (result struct {
+	enumFiles   []*priorityFileInfo
+	structFiles []*priorityFileInfo
+	tableFiles  []*tableFileInfo
+	err         error
+}) {
 	if err := filepath.Walk(p.path, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -194,10 +207,20 @@ func (p *Parser) searchFiles() (structFiles []*structFileInfo, tableFiles []*tab
 
 		fileName = strings.TrimSuffix(fileName, ext)
 
+		// 匹配枚举文件
+		if matches := enumFileNameRegexp.FindStringSubmatch(fileName); len(matches) > 0 {
+			priority, _ := strconv.Atoi(matches[1])
+			result.enumFiles = append(result.enumFiles, &priorityFileInfo{
+				path:     path,
+				priority: priority,
+			})
+			return nil
+		}
+
 		// 匹配结构体文件
 		if matches := structFileNameRegexp.FindStringSubmatch(fileName); len(matches) > 0 {
 			priority, _ := strconv.Atoi(matches[1])
-			structFiles = append(structFiles, &structFileInfo{
+			result.structFiles = append(result.structFiles, &priorityFileInfo{
 				path:     path,
 				priority: priority,
 			})
@@ -205,18 +228,28 @@ func (p *Parser) searchFiles() (structFiles []*structFileInfo, tableFiles []*tab
 		}
 
 		// 匹配配置表文件
-		tableFiles = append(tableFiles, &tableFileInfo{path: path})
+		result.tableFiles = append(result.tableFiles, &tableFileInfo{path: path})
 
 		return nil
 	}); err != nil {
-		return nil, nil, pkg_errors.WithMessage(err, "search files")
+		result.err = pkg_errors.WithMessage(err, "search files")
+		return
 	}
 
-	sort.SliceStable(structFiles, func(i, j int) bool {
-		return structFiles[i].priority < structFiles[j].priority
+	sort.SliceStable(result.enumFiles, func(i, j int) bool {
+		return result.enumFiles[i].priority < result.enumFiles[j].priority
+	})
+	sort.SliceStable(result.structFiles, func(i, j int) bool {
+		return result.structFiles[i].priority < result.structFiles[j].priority
 	})
 
 	return
+}
+
+// prioritySheetInfo 结构体sheet信息
+type prioritySheetInfo struct {
+	*xlsx.Sheet     // sheet
+	priority    int // 优先级
 }
 
 // 获取sheet中的value

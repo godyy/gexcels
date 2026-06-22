@@ -39,6 +39,7 @@ type goExporter struct {
 	kindOptions            *GoOptions        // 分类选项
 	fieldNames             map[string]string // 导出的字段名
 	fieldTypes             map[string]string // 导出的字段类型
+	enumNames              map[string]string // 导出的枚举名
 	structNames            map[string]string // 导出的结构体名
 	tableNames             map[string]string // 导出的表名
 	tableNameConstNames    map[string]string // 导出的表名常量名名称
@@ -57,6 +58,7 @@ func createGoExporter(p *parse.Parser, path string, options *Options, kindOption
 		kindOptions:            goOptions,
 		fieldNames:             make(map[string]string),
 		fieldTypes:             make(map[string]string),
+		enumNames:              make(map[string]string),
 		structNames:            make(map[string]string),
 		tableNames:             make(map[string]string),
 		tableNameConstNames:    make(map[string]string),
@@ -70,6 +72,10 @@ func (e *goExporter) kind() export.CodeKind { return export.CodeGo }
 
 func (e *goExporter) export() error {
 	log.Printf("export code go to [%s]", e.path)
+
+	if err := e.exportEnumsFile(); err != nil {
+		return err
+	}
 
 	if err := e.exportStructsFile(); err != nil {
 		return err
@@ -89,6 +95,22 @@ func (e *goExporter) export() error {
 
 	_ = exec.Command("go", "fmt", e.path).Run()
 
+	return nil
+}
+
+// exportEnumFile 导出枚举文件
+func (e *goExporter) exportEnumsFile() error {
+	if len(e.parser.Enums) == 0 {
+		return nil
+	}
+
+	content := e.GenEnumsFile()
+	filePath := filepath.Join(e.path, e.kindOptions.PkgName+"_enums.go")
+	if err := os.WriteFile(filePath, ([]byte)(content), os.ModePerm); err != nil {
+		return pkg_errors.WithMessagef(err, "export code: go: enums to [%s]", filePath)
+	}
+
+	log.PrintfGreen("export code: go: enums to [%s]", filePath)
 	return nil
 }
 
@@ -232,6 +254,17 @@ func (e *goExporter) GetFieldType(fd *gexcels.Field) string {
 	} else {
 		s = e.GenFieldType(fd)
 		e.fieldTypes[fd.Name+":"+fd.FieldTypeInfo.String()] = s
+		return s
+	}
+}
+
+// GetEnumName 获取枚举名称
+func (e *goExporter) GetEnumName(enum *parse.Enum) string {
+	if s, ok := e.enumNames[enum.Name]; ok {
+		return s
+	} else {
+		s = e.GenEnumName(enum)
+		e.enumNames[enum.Name] = s
 		return s
 	}
 }
@@ -392,6 +425,22 @@ func (e *goExporter) GenFieldName(fd *gexcels.Field) string {
 	return utils.CamelCase(fd.Name, true)
 }
 
+// GenEnumName 生成枚举名称
+func (e *goExporter) GenEnumName(enum *parse.Enum) string {
+	return utils.CamelCase(enum.Name, true)
+}
+
+// GenEnumItemName 生成枚举项名称
+func (e *goExporter) GenEnumItemName(enum *parse.Enum, index int) string {
+	item := enum.GetItem(index)
+	return utils.CamelCase(enum.Name, true) + utils.CamelCase(item.Name, true)
+}
+
+// GenEnumStringsVarName 生成枚举项字符串变量名称
+func (e *goExporter) GenEnumStringsVarName(enum *parse.Enum) string {
+	return utils.CamelCase(enum.Name, false) + "Strings"
+}
+
 // GenStructName 生成结构体名称
 func (e *goExporter) GenStructName(sd *parse.Struct) string {
 	return utils.CamelCase(sd.Name, true)
@@ -465,6 +514,8 @@ func (e *goExporter) GenPrimitiveFieldType(t gexcels.FieldType) string {
 func (e *goExporter) GenFieldType(fd *gexcels.Field) string {
 	if fd.Type.Primitive() {
 		return e.GenPrimitiveFieldType(fd.Type)
+	} else if fd.Type == gexcels.FTEnum {
+		return e.GetEnumName(e.parser.GetEnum(fd.FieldTypeInfo.GetName()))
 	} else if fd.Type == gexcels.FTStruct {
 		sd := e.parser.GetStructByName(fd.GetName())
 		return "*" + e.GetStructName(sd)
@@ -472,6 +523,8 @@ func (e *goExporter) GenFieldType(fd *gexcels.Field) string {
 		elementType := fd.GetElementType()
 		if elementType.Type.Primitive() {
 			return "[]" + e.GenPrimitiveFieldType(elementType.Type)
+		} else if elementType.Type == gexcels.FTEnum {
+			return "[]" + e.GetEnumName(e.parser.GetEnum(elementType.GetName()))
 		} else if elementType.Type == gexcels.FTStruct {
 			sd := e.parser.GetStructByName(elementType.GetName())
 			return "[]*" + e.GetStructName(sd)

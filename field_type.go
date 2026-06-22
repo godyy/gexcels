@@ -17,9 +17,28 @@ const (
 	FTFloat64
 	FTBool
 	FTString
+	FTEnum
 	FTStruct
 	FTArray
 )
+
+// fieldTypeStrings 字段类型字符串映射
+var fieldTypeStrings = [...]string{
+	FTUnknown: "unknown",
+	FTInt32:   "int32",
+	FTInt64:   "int64",
+	FTFloat32: "float32",
+	FTFloat64: "float64",
+	FTBool:    "bool",
+	FTString:  "string",
+	FTEnum:    "enum",
+	FTStruct:  "struct",
+	FTArray:   "array",
+}
+
+func (ft FieldType) String() string {
+	return fieldTypeStrings[ft]
+}
 
 // primitiveFieldTypeStrings primitive FieldType 到其字符形式的映射
 var primitiveFieldTypeStrings = map[FieldType]string{
@@ -59,7 +78,7 @@ func ParsePrimitiveFieldType(s string) FieldType {
 // 字段类型参数索引.
 const (
 	_              = iota
-	ftpName        // 类型名称. for FTStruct
+	ftpName        // 类型名称. for FTStruct, FTEnum
 	ftpElementType // 元素类型. for FTArray
 )
 
@@ -141,6 +160,23 @@ func NewStructArrayFieldTypeInfo(structName string) *FieldTypeInfo {
 	}
 	info := newFieldTypeInfo(FTArray)
 	info.setElementType(NewStructFieldTypeInfo(structName))
+	return info
+}
+
+// NewEnumFieldTypeInfo 创建枚举字段类型信息
+func NewEnumFieldTypeInfo(enumName string) *FieldTypeInfo {
+	if !MatchName(enumName) {
+		panic("gexcels: NewEnumFieldTypeInfo: enum name " + enumName + " invalid")
+	}
+	info := newFieldTypeInfo(FTEnum)
+	info.setName(enumName)
+	return info
+}
+
+// NewArrayFieldTypeInfo 创建数组字段类型信息
+func NewArrayFieldTypeInfo(et *FieldTypeInfo) *FieldTypeInfo {
+	info := newFieldTypeInfo(FTArray)
+	info.setElementType(et)
 	return info
 }
 

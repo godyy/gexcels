@@ -1,6 +1,7 @@
 package parse
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -34,9 +35,13 @@ func newStruct(name, desc string) *Struct {
 }
 
 // addStruct 添加结构体
-func (p *Parser) addStruct(sd *Struct) {
+func (p *Parser) addStruct(sd *Struct) error {
+	if err := p.addCustomFieldType(gexcels.NewStructFieldTypeInfo(sd.Name)); err != nil {
+		return err
+	}
 	p.Structs = append(p.Structs, sd)
 	p.structByName[sd.Name] = sd
+	return nil
 }
 
 // hasStruct 是否存在结构体
@@ -51,7 +56,7 @@ func (p *Parser) GetStructByName(name string) *Struct {
 }
 
 // parseStructs 解析结构体定义
-func (p *Parser) parseStructs(files []*structFileInfo) error {
+func (p *Parser) parseStructs(files []*priorityFileInfo) error {
 	for _, file := range files {
 		if err := p.parseStructFile(file); err != nil {
 			return err
@@ -64,13 +69,13 @@ func (p *Parser) parseStructs(files []*structFileInfo) error {
 var structSheetNameRegexp = regexp.MustCompile(`^(.*)\|(Struct\w*)(?:\.([0-9]*))?`)
 
 // parseStructFile 解析结构体定义文件
-func (p *Parser) parseStructFile(info *structFileInfo) error {
+func (p *Parser) parseStructFile(info *priorityFileInfo) error {
 	file, err := xlsx.OpenFile(info.path)
 	if err != nil {
 		return err
 	}
 
-	sheets := make([]*structSheetInfo, 0, len(file.Sheets))
+	sheets := make([]*prioritySheetInfo, 0, len(file.Sheets))
 	for _, sheet := range file.Sheets {
 		matches := structSheetNameRegexp.FindStringSubmatch(sheet.Name)
 		if len(matches) != 4 {
@@ -78,7 +83,7 @@ func (p *Parser) parseStructFile(info *structFileInfo) error {
 		}
 
 		priority, _ := strconv.Atoi(matches[3])
-		sheets = append(sheets, &structSheetInfo{
+		sheets = append(sheets, &prioritySheetInfo{
 			Sheet:    sheet,
 			priority: priority,
 		})
@@ -94,12 +99,6 @@ func (p *Parser) parseStructFile(info *structFileInfo) error {
 		}
 	}
 	return nil
-}
-
-// structSheetInfo 结构体sheet信息
-type structSheetInfo struct {
-	*xlsx.Sheet     // sheet
-	priority    int // 优先级
 }
 
 // parseStructSheet 解析sheet中定义的结构体
@@ -128,10 +127,9 @@ func (p *Parser) parseStructSheet(sheet *xlsx.Sheet) error {
 		if err != nil {
 			return pkg_errors.WithMessagef(err, "row[%d] %s", i, row.GetCell(gexcels.TableStructColName).Value)
 		}
-		if p.hasStruct(sd.Name) {
-			return fmt.Errorf("struct %s already exist", sd.Name)
+		if err := p.addStruct(sd); err != nil {
+			return pkg_errors.WithMessagef(err, "add struct %s", sd.Name)
 		}
-		p.addStruct(sd)
 	}
 
 	return nil
@@ -167,7 +165,7 @@ func (p *Parser) parseStructRow(row *xlsx.Row) (*Struct, error) {
 		reflectStructFields[i] = reflect.StructField{
 			Name: utils.CamelCase(fd.Name, true),
 			Type: fdReflectType,
-			Tag:  reflect.StructTag(genStructFieldJsonTag(fd)),
+			Tag:  reflect.StructTag(genStructFieldTag(fd)),
 		}
 	}
 	sd.ReflectType = reflect.StructOf(reflectStructFields)
@@ -234,7 +232,47 @@ func (p *Parser) parseStructFieldValue(fd *gexcels.Field, s string) (interface{}
 		return nil, err
 	}
 
+	if err := p.adjustStructValue(sd, reflect.ValueOf(val).Elem()); err != nil {
+		return nil, pkg_errors.WithMessage(err, "adjust")
+	}
+
 	return val, nil
+}
+
+// adjustStructValue 调整结构体字段值
+func (p *Parser) adjustStructValue(sd *Struct, rv reflect.Value) error {
+	for i := range sd.Fields {
+		field := sd.Fields[i]
+		rField := rv.Field(i)
+		if field.Type == gexcels.FTEnum {
+			enum := p.GetEnum(field.GetName())
+			if enum == nil {
+				return pkg_errors.WithMessagef(errEnumNotDefine(field.GetName()), "field %s", field.Name)
+			}
+			itemName, ok := rField.Interface().(string)
+			if !ok {
+				return fmt.Errorf("field %s:%s must be string", field.Name, field.GetName())
+			}
+			itemValue, ok := enum.GetItemValueByName(itemName)
+			if !ok {
+				return pkg_errors.WithMessagef(errEnumItemNotDefine(enum.Name, itemName), "field %s:%s", field.Name, field.GetName())
+			}
+			rField.Set(reflect.ValueOf(itemValue))
+		} else if field.Type == gexcels.FTStruct {
+			struct_ := p.GetStructByName(field.GetName())
+			if struct_ == nil {
+				return pkg_errors.WithMessagef(errStructNotDefine(field.GetName()), "field %s", field.Name)
+			}
+			if err := p.adjustStructValue(struct_, rField.Elem()); err != nil {
+				return pkg_errors.WithMessagef(err, "field %s", field.Name)
+			}
+		} else if field.Type == gexcels.FTArray {
+			if err := p.adjustArrayFieldValue(field, rField); err != nil {
+				return pkg_errors.WithMessagef(err, "field %s", field.Name)
+			}
+		}
+	}
+	return nil
 }
 
 // structRuleLinkRegexp 结构体字段链接规则匹配正则表达式
@@ -288,7 +326,7 @@ func (p *Parser) parseStructRuleLink(sd *Struct, value string) error {
 	return nil
 }
 
-// genStructFieldJsonTag 生成结构体字段的json tag
-func genStructFieldJsonTag(fd *gexcels.Field) string {
-	return "`json:\"" + fd.Name + ",omitempty\"`"
+// genStructFieldTag 生成结构体字段的tag
+func genStructFieldTag(fd *gexcels.Field) string {
+	return "json:\"" + fd.Name + ",omitempty\"" + " " + "bson:\"" + fd.Name + ",omitempty\""
 }

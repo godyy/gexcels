@@ -3,8 +3,9 @@ package parse
 import (
 	"errors"
 	"fmt"
-	"github.com/godyy/gexcels"
 	"strings"
+
+	"github.com/godyy/gexcels"
 )
 
 // Exported Errors
@@ -52,6 +53,16 @@ func errFieldNameInvalid(name string) error {
 // errFieldNameDuplicate 字段名重复
 func errFieldNameDuplicate(name string) error {
 	return fmt.Errorf("field name %s duplicate", name)
+}
+
+// errEnumNotDefine 未定义的枚举
+func errEnumNotDefine(enumName string) error {
+	return fmt.Errorf("enum %s not define", enumName)
+}
+
+// errEnumItemNotDefine 未定义的枚举项
+func errEnumItemNotDefine(enumName string, itemName string) error {
+	return fmt.Errorf("enum %s item %s not define", enumName, itemName)
 }
 
 // errStructNotDefine 未定义的结构体

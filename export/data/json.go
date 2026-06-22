@@ -113,6 +113,8 @@ func (e *jsonExporter) marshalJsonTableEntry(td *parse.Table, entry gexcels.Tabl
 func (e *jsonExporter) marshalJsonFieldValue(fd *gexcels.Field, val interface{}) ([]byte, error) {
 	if fd.Type.Primitive() {
 		return json.Marshal(val)
+	} else if fd.Type == gexcels.FTEnum {
+		return json.Marshal(val)
 	} else if fd.Type == gexcels.FTStruct {
 		sd := e.parser.GetStructByName(fd.GetName())
 		return e.marshalJsonStructValue(sd, val)
@@ -158,6 +160,8 @@ func (e *jsonExporter) marshalJsonStructValue(sd *parse.Struct, val interface{})
 func (e *jsonExporter) marshalJsonArrayValue(fd *gexcels.Field, val interface{}) ([]byte, error) {
 	elementType := fd.GetElementType()
 	if elementType.Type.Primitive() {
+		return json.Marshal(val)
+	} else if elementType.Type == gexcels.FTEnum {
 		return json.Marshal(val)
 	} else if elementType.Type == gexcels.FTStruct {
 		sd := e.parser.GetStructByName(elementType.GetName())
