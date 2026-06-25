@@ -518,30 +518,33 @@ func (e *goExporter) GenPrimitiveFieldType(t gexcels.FieldType) string {
 	}
 }
 
+// genTypeInfo 将 FieldTypeInfo 转换为 Go 类型字符串（递归支持 array/map/struct/enum）。
+// 注意：struct 在导出的 Go 类型中统一用指针表示（与现有导出约定保持一致）。
+func (e *goExporter) genTypeInfo(ti *gexcels.FieldTypeInfo) string {
+	if ti == nil {
+		panic("export code: go: genTypeInfo: typeInfo is nil")
+	}
+
+	switch ti.Type {
+	case gexcels.FTInt32, gexcels.FTInt64, gexcels.FTFloat32, gexcels.FTFloat64, gexcels.FTBool, gexcels.FTString:
+		return e.GenPrimitiveFieldType(ti.Type)
+	case gexcels.FTEnum:
+		return e.GetEnumName(e.parser.GetEnum(ti.GetName()))
+	case gexcels.FTStruct:
+		sd := e.parser.GetStructByName(ti.GetName())
+		return "*" + e.GetStructName(sd)
+	case gexcels.FTArray:
+		return "[]" + e.genTypeInfo(ti.GetElementType())
+	case gexcels.FTMap:
+		return "map[" + e.genTypeInfo(ti.GetMapKeyType()) + "]" + e.genTypeInfo(ti.GetMapValueType())
+	default:
+		panic(fmt.Sprintf("export code: go: genTypeInfo: field type %d invalid", ti.Type))
+	}
+}
+
 // GenFieldType 生成字段类型
 func (e *goExporter) GenFieldType(fd *gexcels.Field) string {
-	if fd.Type.Primitive() {
-		return e.GenPrimitiveFieldType(fd.Type)
-	} else if fd.Type == gexcels.FTEnum {
-		return e.GetEnumName(e.parser.GetEnum(fd.FieldTypeInfo.GetName()))
-	} else if fd.Type == gexcels.FTStruct {
-		sd := e.parser.GetStructByName(fd.GetName())
-		return "*" + e.GetStructName(sd)
-	} else if fd.Type == gexcels.FTArray {
-		elementType := fd.GetElementType()
-		if elementType.Type.Primitive() {
-			return "[]" + e.GenPrimitiveFieldType(elementType.Type)
-		} else if elementType.Type == gexcels.FTEnum {
-			return "[]" + e.GetEnumName(e.parser.GetEnum(elementType.GetName()))
-		} else if elementType.Type == gexcels.FTStruct {
-			sd := e.parser.GetStructByName(elementType.GetName())
-			return "[]*" + e.GetStructName(sd)
-		} else {
-			panic(fmt.Sprintf("export code: go: GenFieldType: array element type %d invalid", elementType.Type))
-		}
-	} else {
-		panic(fmt.Sprintf("export code: go: GenFieldType: field type %d invalid", fd.Type))
-	}
+	return e.genTypeInfo(fd.FieldTypeInfo)
 }
 
 // GenStructFieldTag 生成结构体字段标签

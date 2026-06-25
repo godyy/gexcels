@@ -1,6 +1,9 @@
 package gexcels
 
-import "strings"
+import (
+	"errors"
+	"strings"
+)
 
 // 结构体表各列定义
 const (
@@ -16,6 +19,9 @@ const TableStructCols = TableStructColDesc + 1
 
 // TableStructFirstRow 结构体配置表首行
 const TableStructFirstRow = 1
+
+// StructMaxField 结构体最大字段数量
+const StructMaxField = 256
 
 // StructFieldSep 结构体字段分隔符
 const StructFieldSep = ","
@@ -39,7 +45,13 @@ func NewStruct(name, desc string) *Struct {
 	}
 }
 
+// ErrStructFieldNumberExceedLimit 结构体字段数量超过限制
+var ErrStructFieldNumberExceedLimit = errors.New("gexcels: struct field number exceed limit")
+
 func (sd *Struct) AddField(field *Field) bool {
+	if len(sd.Fields) >= StructMaxField {
+		panic(ErrStructFieldNumberExceedLimit)
+	}
 	if field == nil {
 		panic("gexcels: Struct.AddField: field is nil")
 	}

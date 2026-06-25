@@ -12,12 +12,6 @@ import (
 	"github.com/tealeg/xlsx/v3"
 )
 
-// structFieldsRegexp 结构体字段定义正则表达式
-var structFieldsRegexp = regexp.MustCompile(`^` + gexcels.NamePattern + `:(?:\[\])?` + gexcels.NamePattern + `(?::"[^"]*")?(?:\s*,\s*(` + gexcels.NamePattern + `:(?:\[\])?` + gexcels.NamePattern + `(?::"[^"]*")?))*$`)
-
-// structFieldRegexp 结构体单字段正则表达式
-var structFieldRegexp = regexp.MustCompile(`(` + gexcels.NamePattern + `):((?:\[\])?` + gexcels.NamePattern + `)(?::"([^"]*)")?`)
-
 // Struct 结构体
 type Struct struct {
 	*gexcels.Struct // 基础信息
@@ -38,12 +32,6 @@ func (p *Parser) addStruct(sd *Struct) error {
 	p.Structs = append(p.Structs, sd)
 	p.structByName[sd.Name] = sd
 	return nil
-}
-
-// hasStruct 是否存在结构体
-func (p *Parser) hasStruct(name string) bool {
-	_, ok := p.structByName[name]
-	return ok
 }
 
 // GetStructByName 根据名称获取结构体
@@ -157,45 +145,107 @@ func (p *Parser) parseStructRow(row *xlsx.Row) (*Struct, error) {
 
 // parseStructFields 解析所有结构体字段
 func (p *Parser) parseStructFields(sd *Struct, fields string) error {
-	if !structFieldsRegexp.MatchString(fields) {
-		return fmt.Errorf("fields (%s) invalid", fields)
+	fields = strings.TrimSpace(fields)
+	if fields == "" {
+		return fmt.Errorf("fields empty")
 	}
 
-	matchFields := structFieldRegexp.FindAllStringSubmatch(fields, -1)
-	if len(matchFields) <= 0 {
-		return fmt.Errorf("fields (%s) invalid", fields)
+	// 字段定义字符串以前通过正则限制类型表达式形态，但会阻碍 map 等复杂类型。
+	// 这里改为分割 + 逐字段解析，保证类型表达式可扩展（数组/map/自定义类型等）。
+	fieldTokens, err := splitStructFieldTokens(fields)
+	if err != nil {
+		return pkg_errors.WithMessagef(err, "fields (%s) invalid", fields)
+	}
+	if len(fieldTokens) > gexcels.StructMaxField {
+		return fmt.Errorf("field number %d exceed limit, max %d", len(fieldTokens), gexcels.StructMaxField)
 	}
 
-	sd.Fields = make([]*gexcels.Field, 0, len(matchFields))
-	sd.FieldByName = make(map[string]*gexcels.Field, len(matchFields))
-	for _, field := range matchFields {
-		fieldDef, err := p.parseStructField(field[1:])
+	sd.Fields = make([]*gexcels.Field, 0, len(fieldTokens))
+	sd.FieldByName = make(map[string]*gexcels.Field, len(fieldTokens))
+	for _, token := range fieldTokens {
+		fieldDef, err := p.parseStructFieldToken(token)
 		if err != nil {
-			return pkg_errors.WithMessagef(err, "field[%s]", field[0])
+			return pkg_errors.WithMessagef(err, "field[%s]", token)
 		}
-		if sd.FieldByName[fieldDef.Name] != nil {
+		if !sd.AddField(fieldDef) {
 			return errFieldNameDuplicate(fieldDef.Name)
 		}
-		sd.Fields = append(sd.Fields, fieldDef)
-		sd.FieldByName[fieldDef.Name] = fieldDef
 	}
 
 	return nil
 }
 
-// parseStructField 解析结构体字段
-func (p *Parser) parseStructField(def []string) (*gexcels.Field, error) {
-	if len(def) != 3 {
+// splitStructFieldTokens 按逗号分割字段定义，但需要跳过 desc 的引号内容。
+// e.g: A:int32:"a,b",MM:map[string]int32:"m"
+func splitStructFieldTokens(s string) ([]string, error) {
+	var (
+		out     []string
+		inQuote bool
+		start   int
+	)
+	for i := 0; i < len(s); i++ {
+		if s[i] == '"' {
+			inQuote = !inQuote
+			continue
+		}
+		if s[i] == ',' && !inQuote {
+			token := strings.TrimSpace(s[start:i])
+			if token == "" {
+				return nil, errStructFieldDefineInvalid
+			}
+			out = append(out, token)
+			start = i + 1
+		}
+	}
+	last := strings.TrimSpace(s[start:])
+	if last == "" {
+		return nil, errStructFieldDefineInvalid
+	}
+	out = append(out, last)
+	return out, nil
+}
+
+// parseStructFieldToken 解析结构体字段定义
+func (p *Parser) parseStructFieldToken(token string) (*gexcels.Field, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
 		return nil, errStructFieldDefineInvalid
 	}
 
-	fdTypeInfo, err := p.parseFieldTypeInfo(def[1])
+	// token 形如：Name:Type 或 Name:Type:"Desc"
+	sep := strings.IndexByte(token, ':')
+	if sep <= 0 {
+		return nil, errStructFieldDefineInvalid
+	}
+	name := strings.TrimSpace(token[:sep])
+	if !gexcels.MatchName(name) {
+		return nil, errStructFieldDefineInvalid
+	}
+
+	rest := strings.TrimSpace(token[sep+1:])
+	if rest == "" {
+		return nil, errStructFieldDefineInvalid
+	}
+
+	typeStr := rest
+	desc := ""
+	if i := strings.Index(rest, `:"`); i >= 0 {
+		typeStr = strings.TrimSpace(rest[:i])
+		descPart := rest[i+2:]
+		if !strings.HasSuffix(descPart, `"`) {
+			return nil, errStructFieldDefineInvalid
+		}
+		desc = descPart[:len(descPart)-1]
+	}
+	if typeStr == "" {
+		return nil, errStructFieldDefineInvalid
+	}
+
+	fdTypeInfo, err := p.parseFieldTypeInfo(typeStr)
 	if err != nil {
 		return nil, err
 	}
-
-	fd := gexcels.NewField(def[0], def[2], fdTypeInfo)
-	return fd, nil
+	return gexcels.NewField(name, desc, fdTypeInfo), nil
 }
 
 // parseStructFieldValue 解析结构体字段值
@@ -214,11 +264,13 @@ func (p *Parser) parseStructFieldValue(fd *gexcels.Field, s string) (any, error)
 		return nil, err
 	}
 
-	return p.convertJSONStructValue(fd.GetName(), raw, fd.Name)
+	return p.convertJSONStructValue(fd.FieldTypeInfo, raw, fd.Name)
 }
 
 // structRuleLinkRegexp 结构体字段链接规则匹配正则表达式
-var structRuleLinkRegexp = regexp.MustCompile(`^(` + gexcels.NamePattern + `),(` + gexcels.NamePattern + `).(` + gexcels.NamePattern + `)$`)
+// 格式：LocalField,<LinkValue>
+// 其中 <LinkValue> 与表字段规则 LINK 的 value 部分一致（见 gexcels.FRLink.ParseValue）。
+var structRuleLinkRegexp = regexp.MustCompile(`^(` + gexcels.NamePattern + `),(.+)$`)
 
 // parseStructRule 解析结构体规则
 func (p *Parser) parseStructRule(sd *Struct, ruleStr string) error {
@@ -250,7 +302,7 @@ func (p *Parser) parseStructRule(sd *Struct, ruleStr string) error {
 // parseStructRuleLink 解析结构体链接规则
 func (p *Parser) parseStructRuleLink(sd *Struct, value string) error {
 	values := structRuleLinkRegexp.FindStringSubmatch(value)
-	if len(values) != 4 {
+	if len(values) != 3 {
 		return fmt.Errorf("FRLink value (%s) invalid", value)
 	}
 	localFieldName := values[1]
@@ -258,17 +310,13 @@ func (p *Parser) parseStructRuleLink(sd *Struct, value string) error {
 	if localFd == nil {
 		return fmt.Errorf("FRLink local field[%s] not found", localFieldName)
 	}
-	if !localFd.Type.Primitive() && !(localFd.Type == gexcels.FTArray && localFd.GetElementType().Type.Primitive()) {
-		return fmt.Errorf("FRLink local field[%s] must be primitive", localFieldName)
+
+	rule := &gexcels.FRLink{}
+	if err := rule.ParseValue(values[2]); err != nil {
+		return err
 	}
-	rule := gexcels.NewFRLink(values[2], values[3])
 	if !localFd.AddRule(rule) {
 		return fmt.Errorf("multiple FRLink on field[%s]", localFieldName)
 	}
 	return nil
-}
-
-// genStructFieldTag 生成结构体字段的tag
-func genStructFieldTag(fd *gexcels.Field) string {
-	return "json:\"" + fd.Name + ",omitempty\"" + " " + "bson:\"" + fd.Name + ",omitempty\""
 }

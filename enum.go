@@ -4,6 +4,17 @@ import (
 	"fmt"
 )
 
+// enumUnderlyingTypes 枚举底层类型.
+var enumUnderlyingTypes = map[FieldType]bool{
+	FTInt32:  true,
+	FTString: true,
+}
+
+// CanEnum 是否可以作为枚举的底层类型.
+func (ft FieldType) CanEnum() bool {
+	return enumUnderlyingTypes[ft]
+}
+
 const (
 	EnumColBegin    = 0 // 开始定义枚举的列索引
 	EnumColItemName = 0 // 枚举项名称列索引
@@ -26,7 +37,7 @@ type Enum struct {
 
 // NewEnum 创建枚举.
 func NewEnum(name string, typ FieldType, desc string) *Enum {
-	if !CheckEnumType(typ) {
+	if !typ.CanEnum() {
 		panic(fmt.Errorf("invalid enum type %d", typ))
 	}
 	return &Enum{
@@ -87,9 +98,4 @@ func (e *Enum) GetItemByName(name string) *EnumItem {
 // GetItemByValue 根据值获取枚举项.
 func (e *Enum) GetItemByValue(value string) *EnumItem {
 	return e.ItemByValue[value]
-}
-
-// CheckEnumType 检查枚举类型是否有效.
-func CheckEnumType(typ FieldType) bool {
-	return typ == FTInt32 || typ == FTString
 }

@@ -3,7 +3,7 @@ package gexcels
 import "regexp"
 
 // NamePattern 名称匹配模式
-const NamePattern = `[A-Za-z]\w*[A-Za-z0-9]`
+const NamePattern = `[A-Za-z]\w*[A-Za-z0-9]*`
 
 // nameRegexp 名称匹配正则表达式
 var nameRegexp = regexp.MustCompile(NamePattern)

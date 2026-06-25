@@ -25,14 +25,14 @@ func ExportBytes(p *parse.Parser, path string) error {
 		return ErrNoPathSpecified
 	}
 
-	return doExport(&bytesExporter{parser: p, path: path, buf: bytes.NewBuffer(make([]byte, 0, 128))})
+	return doExport(&bytesExporter{baseExporter: newBaseExporter(p), path: path, buf: bytes.NewBuffer(make([]byte, 0, 128))})
 }
 
 // bytesExporter bytes导出器
 type bytesExporter struct {
-	parser *parse.Parser
-	path   string
-	buf    *bytes.Buffer
+	baseExporter
+	path string
+	buf  *bytes.Buffer
 }
 
 func (e *bytesExporter) kind() internal_define.DataKind {
@@ -146,18 +146,7 @@ func (e *bytesExporter) encodeFieldValue(fd *gexcels.Field, index int, value any
 		return pkg_errors.WithMessagef(err, "field[%s] index", fd.Name)
 	}
 
-	// field value
-	if fd.Type.Primitive() {
-		return e.encodePrimitiveValue(fd.Type, value)
-	} else if fd.Type == gexcels.FTEnum {
-		return e.encodeEnumField(e.parser.GetEnum(fd.GetName()), value)
-	} else if fd.Type == gexcels.FTStruct {
-		return e.encodeStructField(e.parser.GetStructByName(fd.GetName()), value)
-	} else if fd.Type == gexcels.FTArray {
-		return e.encodeArrayValue(fd, value)
-	} else {
-		panic(fmt.Sprintf("export data: bytes: encodeFieldValue: field type %d invalid", fd.Type))
-	}
+	return e.encodeValue(fd.FieldTypeInfo, value, "field["+fd.Name+"]")
 }
 
 // encodePrimitiveValue 编码primitive值
@@ -183,13 +172,15 @@ func (e *bytesExporter) encodePrimitiveValue(ft gexcels.FieldType, value any) er
 }
 
 // encodeEnumField 编码枚举字段
-func (e *bytesExporter) encodeEnumField(enum *parse.Enum, value any) error {
+func (e *bytesExporter) encodeEnumField(ft *gexcels.FieldTypeInfo, value any) error {
+	enum := e.parser.GetEnum(ft.GetName())
 	return e.encodePrimitiveValue(enum.Type, value)
 }
 
 // encodeStructField 编码struct字段
-func (e *bytesExporter) encodeStructField(sd *parse.Struct, value any) error {
+func (e *bytesExporter) encodeStructField(ft *gexcels.FieldTypeInfo, value any) error {
 	var (
+		sd        = e.parser.GetStructByName(ft.GetName())
 		v         = reflect.ValueOf(value)
 		lastIndex int
 	)
@@ -211,38 +202,76 @@ func (e *bytesExporter) encodeStructField(sd *parse.Struct, value any) error {
 	return nil
 }
 
-// encodeArrayValue 编码数组值
-func (e *bytesExporter) encodeArrayValue(fd *gexcels.Field, value any) error {
+// encodeValue 按字段类型递归编码值。
+// 复用 FieldTypeInfo，保证 array/map 等复杂类型无需在多处重复分支逻辑。
+func (e *bytesExporter) encodeValue(ti *gexcels.FieldTypeInfo, value any, path string) error {
+	if ti == nil {
+		return fmt.Errorf("%s type is nil", path)
+	}
+
+	switch ti.Type {
+	case gexcels.FTInt32, gexcels.FTInt64, gexcels.FTFloat32, gexcels.FTFloat64, gexcels.FTBool, gexcels.FTString:
+		return e.encodePrimitiveValue(ti.Type, value)
+	case gexcels.FTEnum:
+		return e.encodeEnumField(ti, value)
+	case gexcels.FTStruct:
+		return e.encodeStructField(ti, value)
+	case gexcels.FTArray:
+		return e.encodeArrayValue(ti, value, path)
+	case gexcels.FTMap:
+		return e.encodeMapValue(ti, value, path)
+	default:
+		return fmt.Errorf("%s type %d invalid", path, ti.Type)
+	}
+}
+
+// encodeArrayValue 编码数组：长度 + N 个元素（元素类型递归编码）。
+func (e *bytesExporter) encodeArrayValue(ft *gexcels.FieldTypeInfo, value any, path string) error {
+	elemType := ft.GetElementType()
 	v := reflect.ValueOf(value)
+	if v.Kind() != reflect.Slice {
+		return fmt.Errorf("%s must be slice", path)
+	}
 	if _, err := e.buf.WriteVarint16(int16(v.Len())); err != nil {
-		return pkg_errors.WithMessagef(err, "field[%s] length", fd.Name)
+		return pkg_errors.WithMessagef(err, "%s length", path)
 	}
-	elementType := fd.GetElementType()
-	if elementType.Type.Primitive() {
-		for i := 0; i < v.Len(); i++ {
-			vv := v.Index(i)
-			if err := e.encodePrimitiveValue(elementType.Type, vv.Interface()); err != nil {
-				return pkg_errors.WithMessagef(err, "field[%s][%d]", fd.Name, i)
-			}
+	for i := 0; i < v.Len(); i++ {
+		vv := v.Index(i)
+		if err := e.encodeValue(elemType, vv.Interface(), fmt.Sprintf("%s[%d]", path, i)); err != nil {
+			return err
 		}
-	} else if elementType.Type == gexcels.FTEnum {
-		enum := e.parser.GetEnum(elementType.GetName())
-		for i := 0; i < v.Len(); i++ {
-			vv := v.Index(i)
-			if err := e.encodeEnumField(enum, vv.Interface()); err != nil {
-				return pkg_errors.WithMessagef(err, "field[%s][%d]", fd.Name, i)
-			}
-		}
-	} else if elementType.Type == gexcels.FTStruct {
-		sd := e.parser.GetStructByName(elementType.GetName())
-		for i := 0; i < v.Len(); i++ {
-			vv := v.Index(i)
-			if err := e.encodeStructField(sd, vv.Interface()); err != nil {
-				return pkg_errors.WithMessagef(err, "field[%s][%d]", fd.Name, i)
-			}
-		}
-	} else {
-		panic(fmt.Sprintf("export data: bytes: encodeArrayValue: element type %d invalid", fd.Type))
 	}
+	return nil
+}
+
+// encodeMapValue 编码 map：长度 + (key,value)*N。
+func (e *bytesExporter) encodeMapValue(ft *gexcels.FieldTypeInfo, value any, path string) error {
+	keyType := ft.GetMapKeyType()
+	valueType := ft.GetMapValueType()
+	if keyType == nil || valueType == nil {
+		return fmt.Errorf("%s map key/value type nil", path)
+	}
+
+	v := reflect.ValueOf(value)
+	if v.Kind() != reflect.Map {
+		return fmt.Errorf("%s must be map", path)
+	}
+
+	if _, err := e.buf.WriteVarint16(int16(v.Len())); err != nil {
+		return pkg_errors.WithMessagef(err, "%s length", path)
+	}
+
+	keys := e.sortMapKeys(keyType, v.MapKeys())
+	for _, key := range keys {
+		if err := e.encodeValue(keyType, key.Interface(), path+" key"); err != nil {
+			return err
+		}
+
+		value := v.MapIndex(key)
+		if err := e.encodeValue(valueType, value.Interface(), fmt.Sprintf("%s[%v]", path, key.Interface())); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }

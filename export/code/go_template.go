@@ -1323,6 +1323,8 @@ func (h *bytesLoadHelper) decodeValue(buf *bytes.Buffer, v reflect.Value) (err e
 		err = h.decodeStruct(buf, v)
 	case reflect.Slice: // FTArray
 		err = h.decodeArray(buf, v)
+	case reflect.Map: // FTMap
+		err = h.decodeMap(buf, v)
 	default:
 		panic(fmt.Sprintf("bytesLoadHelper: decodeValue: unsupported value: %v", v.String()))
 	}
@@ -1395,6 +1397,55 @@ func (h *bytesLoadHelper) decodeArray(buf *bytes.Buffer, array reflect.Value) er
 		arrayValue = reflect.Append(arrayValue, element)
 	}
 	array.Set(arrayValue)
+	return nil
+}
+
+func (h *bytesLoadHelper) decodeMapLength(buf *bytes.Buffer) (int, error) {
+	mapLen, err := buf.ReadVarint16()
+	if err != nil {
+		return 0, pkg_errors.WithMessage(err, "load map length")
+	}
+	return int(mapLen), nil
+}
+
+func (h *bytesLoadHelper) decodeMap(buf *bytes.Buffer, m reflect.Value) error {
+	if m.IsNil() {
+		m.Set(reflect.MakeMap(m.Type()))
+	}
+
+	keyType := m.Type().Key()
+	switch keyType.Kind() {
+	case reflect.Int32, reflect.Int64, reflect.Float32, reflect.Float64, reflect.Bool, reflect.String:
+	default:
+		return fmt.Errorf("load map: unsupported key type: %v", keyType)
+	}
+
+	valueType := m.Type().Elem()
+	mapLen, err := h.decodeMapLength(buf)
+	if err != nil {
+		return err
+	}
+	if mapLen == 0 {
+		return nil
+	}
+
+	mapValue := reflect.MakeMapWithSize(m.Type(), mapLen)
+	for i := 0; i < mapLen; i++ {
+		keyPtr := reflect.New(keyType)
+		key := keyPtr.Elem()
+		if err := h.decodeValue(buf, key); err != nil {
+			return pkg_errors.WithMessagef(err, "load map[%d] key", i)
+		}
+
+		valuePtr := reflect.New(valueType)
+		value := valuePtr.Elem()
+		if err := h.decodeValue(buf, value); err != nil {
+			return pkg_errors.WithMessagef(err, "load map[%v]", key.Interface())
+		}
+
+		mapValue.SetMapIndex(key, value)
+	}
+	m.Set(mapValue)
 	return nil
 }
 `))

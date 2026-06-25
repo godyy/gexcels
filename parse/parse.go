@@ -223,11 +223,6 @@ type priorityFileInfo struct {
 	priority int    // 优先级
 }
 
-// 配置表文件信息
-type tableFileInfo struct {
-	path string // 路径
-}
-
 // structFileNameRegexp 默认结构体文件名匹配正则表达式
 var structFileNameRegexp = regexp.MustCompile(`^(?:[^.]*\.)?struct(?:\.([0-9]*))?$`)
 

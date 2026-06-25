@@ -103,28 +103,24 @@ func errFieldRuleOnGlobalTable(name string) error {
 // tableLinkError 封装TableLink失败错误
 type tableLinkError struct {
 	srcTable string
-	srcField []string
-	dstTable string
-	dstField string
+	link     *TableLink
 	msg      string
 }
 
 func (err *tableLinkError) Error() string {
-	return fmt.Sprintf(" link [%s.%s -> %s.%s] %s", err.srcTable, strings.Join(err.srcField, "."), err.dstTable, err.dstField, err.msg)
+	srcField := strings.Join(err.link.srcField, ".")
+	if err.link.kind == tableLinkKindMapKey {
+		srcField += fmt.Sprintf("[k%d]", err.link.mapLevel)
+	}
+	return fmt.Sprintf(" link [%s.%s -> %s.%s] %s", err.srcTable, srcField, err.link.dstTable, err.link.dstField, err.msg)
 }
 
-// errTableLink 生成配置表链接错误
-func errTableLink(srcTable string, srcField []string, dstTable string, dstField string, f string, args ...any) *tableLinkError {
-	return &tableLinkError{
+// errTableLink 通过配置表link规则生成配置表链接错误
+func errTableLink(srcTable string, link *TableLink, f string, args ...any) *tableLinkError {
+	err := &tableLinkError{
 		srcTable: srcTable,
-		srcField: srcField,
-		dstTable: dstTable,
-		dstField: dstField,
+		link:     link,
 		msg:      fmt.Sprintf(f, args...),
 	}
-}
-
-// errTableLinkByTableLink 通过配置表link规则生成配置表链接错误
-func errTableLinkByTableLink(srcTable string, link *TableLink, f string, args ...any) *tableLinkError {
-	return errTableLink(srcTable, link.srcField, link.dstTable, link.dstField, f, args...)
+	return err
 }

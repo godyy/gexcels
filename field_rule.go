@@ -2,10 +2,12 @@ package gexcels
 
 import (
 	"fmt"
-	"github.com/pkg/errors"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/pkg/errors"
 )
 
 // FRNameValueSep 字段规则名称和值分隔符
@@ -46,7 +48,7 @@ var frCreators = map[string]func() FieldRule{
 }
 
 // FRRegexp 字段规则正则表达式
-var FRRegexp = regexp.MustCompile(`^(` + NamePattern + `)(?:` + FRNameValueSep + `([\w,.]*))?$`)
+var FRRegexp = regexp.MustCompile(`^(` + NamePattern + `)(?:` + FRNameValueSep + `([^\s]+))?$`)
 
 // ParseFieldRule 解析字段规则
 func ParseFieldRule(s string) (FieldRule, error) {
@@ -72,8 +74,8 @@ func ParseFieldRule(s string) (FieldRule, error) {
 }
 
 // errFRValueInvalid 生成表示字段规则值无效的错误
-func errFRValueInvalid(ruleName string, value string, eg string) error {
-	return fmt.Errorf("gexcels: field-rule %s value %s invalid, .e.g %s", ruleName, value, eg)
+func errFRValueInvalid(ruleName string, value string, f string, args ...any) error {
+	return fmt.Errorf("gexcels: field-rule %s value %s invalid, %s", ruleName, value, fmt.Sprintf(f, args...))
 }
 
 // FRUnique 唯一规则，表示该字段的值在配置表返回内具有唯一性
@@ -102,14 +104,23 @@ func (r *FRUnique) ParseValue(value string) error {
 func (r *FRUnique) String() string { return FRNUnique }
 
 // FRLink 链接规则，指向其它配置表的主键或者unique字段
-// .e.g: link=tableName.fieldName
+// 格式: LINK=[Table.Field][,k1:Table.Field][,k2:Table.Field]...
+//
+//	Table.Field 表示字段的叶子值需要链接的表名和字段名.
+//	kx:Table.Field 表示字段中的第x层级的map键需要映射到的表名和字段名，其中x>=1.
 type FRLink struct {
-	TableName string // 目标配置表
-	FieldName string // 目标字段，ID或者unique
+	Value *FRLinkTarget         // 叶子值链接目标
+	Keys  map[int]*FRLinkTarget // 各层级map键链接目标，key为map层级
 }
 
-// frLinkValueRegexp 字段链接规则值正则表达式
-var frLinkValueRegexp = regexp.MustCompile(`^(` + NamePattern + `)\.(` + NamePattern + `)$`)
+// FRLinkTarget 链接规则目标
+type FRLinkTarget struct {
+	TableName string // 目标配置表名
+	FieldName string // 目标字段名
+}
+
+// frLinkPairRegexp 字段链接规则值分段正则表达式
+var frLinkPairRegexp = regexp.MustCompile(`^(?:(` + NamePattern + `):)?(` + NamePattern + `)\.(` + NamePattern + `)$`)
 
 // NewFRLink 创建链接规则
 func NewFRLink(tableName, fieldName string) *FRLink {
@@ -120,8 +131,10 @@ func NewFRLink(tableName, fieldName string) *FRLink {
 		panic("gexcels: NewFRLink: fieldName " + fieldName + " invalid")
 	}
 	return &FRLink{
-		TableName: tableName,
-		FieldName: fieldName,
+		Value: &FRLinkTarget{
+			TableName: tableName,
+			FieldName: fieldName,
+		},
 	}
 }
 
@@ -131,19 +144,105 @@ func (r *FRLink) FRKey() string {
 	return FRNLink
 }
 
+// addKeyTarget 添加map键链接目标
+func (r *FRLink) addKeyTarget(level int, target *FRLinkTarget) bool {
+	if r.Keys == nil {
+		r.Keys = make(map[int]*FRLinkTarget)
+	}
+	if _, ok := r.Keys[level]; ok {
+		return false
+	}
+	r.Keys[level] = target
+	return true
+}
+
+// parseLinkValue 解析链接规则值
+func parseLinkValue(s string) (string, *FRLinkTarget, bool) {
+	s = strings.TrimSpace(s)
+	matches := frLinkPairRegexp.FindStringSubmatch(s)
+	if len(matches) < 3 {
+		return "", nil, false
+	}
+	if len(matches) > 3 {
+		return strings.ToLower(matches[1]), &FRLinkTarget{TableName: matches[2], FieldName: matches[3]}, true
+	} else {
+		return "", &FRLinkTarget{TableName: matches[1], FieldName: matches[2]}, true
+	}
+}
+
 func (r *FRLink) ParseValue(value string) error {
-	matches := frLinkValueRegexp.FindStringSubmatch(value)
-	if len(matches) != 3 {
-		return errFRValueInvalid(FRNLink, value, "tableName.fieldName")
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return errFRValueInvalid(FRNLink, value, "e.g. [Table.Field][,k1:Table.Field][,k2:Table.Field]...")
 	}
 
-	r.TableName = matches[1]
-	r.FieldName = matches[2]
+	r.Value = nil
+	r.Keys = nil
+	parts := strings.Split(value, FRValueSep)
+	for _, part := range parts {
+		kindPrefix, target, ok := parseLinkValue(part)
+		if !ok {
+			return errFRValueInvalid(FRNLink, value, "invalid link pair %s", part)
+		}
+
+		switch {
+		case kindPrefix == "":
+			if r.Value != nil {
+				return errFRValueInvalid(FRNLink, value, "e.g. [Table.Field][,k1:Table.Field][,k2:Table.Field]...")
+			}
+			r.Value = target
+			continue
+		case strings.HasPrefix(kindPrefix, "k"):
+			level, err := strconv.Atoi(kindPrefix[1:])
+			if err != nil {
+				return errFRValueInvalid(FRNLink, value, "kx:Table.Field")
+			}
+			if !r.addKeyTarget(level, target) {
+				return errFRValueInvalid(FRNLink, value, "duplicate k%d:Table.Field", level)
+			}
+		default:
+			return errFRValueInvalid(FRNLink, value, "invalid kind prefix %s", kindPrefix)
+		}
+	}
+
 	return nil
 }
 
 func (r *FRLink) String() string {
-	return FRNLink + FRNameValueSep + r.TableName + "." + r.FieldName
+	var sb strings.Builder
+	sb.WriteString(FRNLink)
+	sb.WriteString(FRNameValueSep)
+
+	first := true
+	if r.Value != nil {
+		sb.WriteString(r.Value.TableName)
+		sb.WriteString(".")
+		sb.WriteString(r.Value.FieldName)
+		first = false
+	}
+
+	if len(r.Keys) > 0 {
+		levels := make([]int, 0, len(r.Keys))
+		for level := range r.Keys {
+			levels = append(levels, level)
+		}
+		sort.Ints(levels)
+		for _, level := range levels {
+			if !first {
+				sb.WriteString(FRValueSep)
+			}
+			sb.WriteString("k")
+			sb.WriteString(strconv.Itoa(level))
+			sb.WriteString("=")
+			t := r.Keys[level]
+			sb.WriteString(t.TableName)
+			sb.WriteString(".")
+			sb.WriteString(t.FieldName)
+			first = false
+		}
+	}
+
+	return sb.String()
 }
 
 // FRCompositeKey 组合键，表示该字段属于某个组合键的一部分
@@ -179,7 +278,7 @@ func (r *FRCompositeKey) FRKey() string {
 func (r *FRCompositeKey) ParseValue(value string) error {
 	matches := frCompositeKeyValueRegexp.FindStringSubmatch(value)
 	if len(matches) != 3 {
-		return errFRValueInvalid(FRNCompositeKey, value, "keyName,index")
+		return errFRValueInvalid(FRNCompositeKey, value, "e.g. keyName,index")
 	}
 
 	r.KeyName = matches[1]
@@ -226,7 +325,7 @@ func (r *FRGroup) FRKey() string {
 func (r *FRGroup) ParseValue(value string) error {
 	matches := frGroupValueRegexp.FindStringSubmatch(value)
 	if len(matches) != 3 {
-		return errFRValueInvalid(FRNGroup, value, "groupName,index")
+		return errFRValueInvalid(FRNGroup, value, "e.g. groupName,index")
 	}
 
 	r.GroupName = matches[1]

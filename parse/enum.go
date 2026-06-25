@@ -149,7 +149,7 @@ func (p *Parser) parseEnum(sheet *xlsx.Sheet, row int) (*Enum, int, error) {
 	if err != nil {
 		return nil, 0, pkg_errors.WithMessage(err, "parse type")
 	}
-	if !gexcels.CheckEnumType(enumTypeInfo.Type) {
+	if !enumTypeInfo.Type.CanEnum() {
 		return nil, row, fmt.Errorf("invalid enum type %s", enumType)
 	}
 

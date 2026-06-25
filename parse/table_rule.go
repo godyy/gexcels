@@ -15,13 +15,24 @@ type TableLink struct {
 	srcField []string // 源字段，可以指向结构体内部字段
 	dstTable string   // 目标配置表
 	dstField string   // 目标字段，ID或者unique
+	kind     tableLinkKind
+	mapLevel int
 }
 
-func newTableLink(srcField []string, dstTable, dstField string) *TableLink {
+type tableLinkKind uint8
+
+const (
+	tableLinkKindValue tableLinkKind = iota
+	tableLinkKindMapKey
+)
+
+func newTableLink(srcField []string, dstTable, dstField string, kind tableLinkKind, mapLevel int) *TableLink {
 	return &TableLink{
 		srcField: srcField,
 		dstTable: dstTable,
 		dstField: dstField,
+		kind:     kind,
+		mapLevel: mapLevel,
 	}
 }
 
@@ -175,32 +186,41 @@ func (td *Table) addGroup(group string, index int, fieldName string) bool {
 
 // getFieldTableLinks 从字段fd中获取TableLink
 func (p *Parser) getFieldTableLinks(fd *gexcels.Field, fieldPath *[]string, links *[]*TableLink) {
-	switch {
-	case fd.Type.Primitive() || (fd.Type == gexcels.FTArray && fd.GetElementType().Type.Primitive()):
-		// primitive类型或者元素类型为primitive的数组
-		if ruleLink := fd.GetFRLink(); ruleLink != nil {
-			srcField := make([]string, len(*fieldPath)+1)
-			copy(srcField, *fieldPath)
-			srcField[len(srcField)-1] = fd.Name
-			*links = append(*links, newTableLink(srcField, ruleLink.TableName, ruleLink.FieldName))
+	if ruleLink := fd.GetFRLink(); ruleLink != nil {
+		srcField := make([]string, 0, len(*fieldPath)+1)
+		srcField = append(srcField, *fieldPath...)
+		srcField = append(srcField, fd.Name)
+
+		if ruleLink.Value != nil {
+			*links = append(*links, newTableLink(srcField, ruleLink.Value.TableName, ruleLink.Value.FieldName, tableLinkKindValue, 0))
 		}
-	case fd.Type == gexcels.FTStruct || (fd.Type == gexcels.FTArray && fd.GetElementType().Type == gexcels.FTStruct):
-		// 结构体或者元素为结构体的数组
-		structName := ""
-		if fd.Type == gexcels.FTStruct {
-			structName = fd.GetName()
-		} else {
-			structName = fd.GetElementType().GetName()
+		for level, tgt := range ruleLink.Keys {
+			*links = append(*links, newTableLink(srcField, tgt.TableName, tgt.FieldName, tableLinkKindMapKey, level))
 		}
-		sd := p.GetStructByName(structName)
+	}
+
+	if fd.Type == gexcels.FTStruct || fd.Type == gexcels.FTArray || fd.Type == gexcels.FTMap {
+		*fieldPath = append(*fieldPath, fd.Name)
+		p.getTypeTableLinks(fd.FieldTypeInfo, fieldPath, links)
+		*fieldPath = (*fieldPath)[:len(*fieldPath)-1]
+	}
+}
+
+// getTypeTableLinks 从字段ti中获取TableLink
+func (p *Parser) getTypeTableLinks(ti *gexcels.FieldTypeInfo, fieldPath *[]string, links *[]*TableLink) {
+	switch ti.Type {
+	case gexcels.FTStruct:
+		sd := p.GetStructByName(ti.GetName())
 		if sd == nil {
 			return
 		}
-		*fieldPath = append(*fieldPath, fd.Name)
 		for _, fd := range sd.Fields {
 			p.getFieldTableLinks(fd, fieldPath, links)
 		}
-		*fieldPath = (*fieldPath)[:len(*fieldPath)-1]
+	case gexcels.FTArray:
+		p.getTypeTableLinks(ti.GetElementType(), fieldPath, links)
+	case gexcels.FTMap:
+		p.getTypeTableLinks(ti.GetMapValueType(), fieldPath, links)
 	}
 }
 
@@ -218,72 +238,342 @@ func (p *Parser) checkTableLinks(td *Table) (errs []error) {
 func (p *Parser) checkTableLinkTable(td *Table, link *TableLink) (errs []error) {
 	var (
 		srcTable, dstTable *Table
-		srcField, dstField *gexcels.Field
+		srcRootField       *gexcels.Field
+		dstField           *gexcels.Field
 	)
 
 	srcTable = td
 	dstTable = p.getTableByName(link.dstTable)
 	if dstTable == nil {
-		return []error{errTableLinkByTableLink(td.Name, link, "dst table not found")}
+		return []error{errTableLink(td.Name, link, "dst table not found")}
 	}
 
 	if srcTableField := srcTable.GetFieldByName(link.srcField[0]); srcTableField == nil {
-		return []error{errTableLinkByTableLink(td.Name, link, "src field not found")}
+		return []error{errTableLink(td.Name, link, "src field not found")}
 	} else {
-		srcField = srcTableField.Field
-		if len(link.srcField) > 1 {
-			srcField = p.getNestedField(srcField, link.srcField, 1)
-			if srcField == nil {
-				return []error{errTableLinkByTableLink(td.Name, link, "src field not found")}
-			}
-		}
-		if !srcField.Type.Primitive() && !(srcField.Type == gexcels.FTArray && srcField.GetElementType().Type.Primitive()) {
-			return []error{errTableLinkByTableLink(td.Name, link, "src field type not primitive")}
-		}
+		srcRootField = srcTableField.Field
 	}
 	if dstTableField := dstTable.GetFieldByName(link.dstField); dstTableField == nil {
-		return []error{errTableLinkByTableLink(td.Name, link, "dst field not found")}
+		return []error{errTableLink(td.Name, link, "dst field not found")}
 	} else if !dstTableField.Unique() {
-		return []error{errTableLinkByTableLink(td.Name, link, "dst field not Unique or not export method")}
+		return []error{errTableLink(td.Name, link, "dst field not Unique or not export method")}
 	} else if !dstTableField.Type.Primitive() {
-		return []error{errTableLinkByTableLink(td.Name, link, "dst field type not primitive")}
+		return []error{errTableLink(td.Name, link, "dst field type not primitive")}
 	} else {
 		dstField = dstTableField.Field
 	}
-	if !checkFieldTypeOnLink(srcField, dstField) {
-		return []error{errTableLinkByTableLink(td.Name, link, "field type not match")}
+
+	path := link.srcField[1:]
+	var validateErr error
+	switch link.kind {
+	case tableLinkKindValue:
+		validateErr = p.validateValueLinkSource(srcRootField.FieldTypeInfo, path, dstField.Type)
+	case tableLinkKindMapKey:
+		validateErr = p.validateMapKeyLinkSource(srcRootField.FieldTypeInfo, path, link.mapLevel, dstField.Type)
+	default:
+		validateErr = fmt.Errorf("link kind invalid")
+	}
+	if validateErr != nil {
+		return []error{errTableLink(td.Name, link, "%s", validateErr.Error())}
 	}
 
 	if srcTable.IsGlobal {
 		fieldValue := srcTable.GetEntryByName(link.srcField[0])
 		if fieldValue == nil {
-			return []error{errTableLinkByTableLink(td.Name, link, "src field value not found")}
+			return []error{errTableLink(td.Name, link, "src field value not found")}
 		}
-		if err := checkTableLinkValue(srcTable, fieldValue, dstTable, dstField, link.srcField, 1); err != nil {
-			errs = append(errs, err...)
-		}
+		errs = append(errs, p.checkTableLinkValue(srcTable, fieldValue, srcRootField.FieldTypeInfo, path, link, dstTable, dstField)...)
 	} else {
 		for _, srcEntry := range srcTable.Entries {
 			fieldValue := srcEntry[link.srcField[0]]
 			if fieldValue == nil {
 				continue
 			}
-			if err := checkTableLinkValue(srcTable, fieldValue, dstTable, dstField, link.srcField, 1); err != nil {
-				errs = append(errs, err...)
-			}
+			errs = append(errs, p.checkTableLinkValue(srcTable, fieldValue, srcRootField.FieldTypeInfo, path, link, dstTable, dstField)...)
 		}
 	}
 
 	return
 }
 
-// checkFieldTypeOnLink 检查两个链接的字段类型是否一致
-func checkFieldTypeOnLink(srcField, dstField *gexcels.Field) bool {
-	srcFieldType := srcField.Type
-	if srcFieldType == gexcels.FTArray {
-		srcFieldType = srcField.GetElementType().Type
+// validateValueLinkSource 检查配置表值链接值类型是否匹配
+func (p *Parser) validateValueLinkSource(srcType *gexcels.FieldTypeInfo, path []string, dstType gexcels.FieldType) error {
+	leafType, err := p.getValueLeafType(srcType, path)
+	if err != nil {
+		return err
 	}
-	return srcFieldType == dstField.Type
+	if leafType != dstType {
+		return fmt.Errorf("field type not match")
+	}
+	return nil
+}
+
+// getValueLeafType 获取配置表字段的叶子类型
+func (p *Parser) getValueLeafType(ti *gexcels.FieldTypeInfo, path []string) (gexcels.FieldType, error) {
+	switch ti.Type {
+	case gexcels.FTArray:
+		return p.getValueLeafType(ti.GetElementType(), path)
+	case gexcels.FTMap:
+		return p.getValueLeafType(ti.GetMapValueType(), path)
+	case gexcels.FTStruct:
+		if len(path) == 0 {
+			return gexcels.FTUnknown, fmt.Errorf("LINK on struct must be defined on struct field")
+		}
+		sd := p.GetStructByName(ti.GetName())
+		if sd == nil {
+			return gexcels.FTUnknown, fmt.Errorf("struct %s not define", ti.GetName())
+		}
+		fd := sd.GetFieldByName(path[0])
+		if fd == nil {
+			return gexcels.FTUnknown, fmt.Errorf("src field not found")
+		}
+		return p.getValueLeafType(fd.FieldTypeInfo, path[1:])
+	case gexcels.FTEnum:
+		enum := p.GetEnum(ti.GetName())
+		if enum == nil {
+			return gexcels.FTUnknown, fmt.Errorf("enum %s not define", ti.GetName())
+		}
+		if len(path) != 0 {
+			return gexcels.FTUnknown, fmt.Errorf("src field not found")
+		}
+		return enum.Type, nil
+	default:
+		if !ti.Type.Primitive() {
+			return gexcels.FTUnknown, fmt.Errorf("src field type invalid")
+		}
+		if len(path) != 0 {
+			return gexcels.FTUnknown, fmt.Errorf("src field not found")
+		}
+		return ti.Type, nil
+	}
+}
+
+// validateMapKeyLinkSource 检查配置表映射键链接值类型是否匹配
+func (p *Parser) validateMapKeyLinkSource(srcType *gexcels.FieldTypeInfo, path []string, mapLevel int, dstType gexcels.FieldType) error {
+	if mapLevel <= 0 {
+		return fmt.Errorf("map level invalid")
+	}
+
+	keyType, ok, err := p.findMapKeyTypeAtLevel(srcType, path, mapLevel, 0)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("map level %d not exist", mapLevel)
+	}
+	if keyType != dstType {
+		return fmt.Errorf("field type not match")
+	}
+	return nil
+}
+
+// findMapKeyTypeAtLevel 按照层级查找映射键类型
+func (p *Parser) findMapKeyTypeAtLevel(ti *gexcels.FieldTypeInfo, path []string, targetLevel int, curLevel int) (gexcels.FieldType, bool, error) {
+	switch ti.Type {
+	case gexcels.FTArray:
+		return p.findMapKeyTypeAtLevel(ti.GetElementType(), path, targetLevel, curLevel)
+	case gexcels.FTStruct:
+		if len(path) == 0 {
+			return gexcels.FTUnknown, false, fmt.Errorf("src field not found")
+		}
+		sd := p.GetStructByName(ti.GetName())
+		if sd == nil {
+			return gexcels.FTUnknown, false, fmt.Errorf("struct %s not define", ti.GetName())
+		}
+		fd := sd.GetFieldByName(path[0])
+		if fd == nil {
+			return gexcels.FTUnknown, false, fmt.Errorf("src field not found")
+		}
+		return p.findMapKeyTypeAtLevel(fd.FieldTypeInfo, path[1:], targetLevel, curLevel)
+	case gexcels.FTMap:
+		curLevel++
+		if curLevel == targetLevel {
+			kt := ti.GetMapKeyType()
+			if kt.Type == gexcels.FTEnum {
+				enum := p.GetEnum(kt.GetName())
+				if enum == nil {
+					return gexcels.FTUnknown, false, fmt.Errorf("enum %s not define", kt.GetName())
+				}
+				return enum.Type, true, nil
+			}
+			return kt.Type, true, nil
+		}
+
+		vt := ti.GetMapValueType()
+		if vt.Type == gexcels.FTArray || vt.Type == gexcels.FTMap {
+			return p.findMapKeyTypeAtLevel(vt, path, targetLevel, curLevel)
+		}
+		return gexcels.FTUnknown, false, nil
+	default:
+		return gexcels.FTUnknown, false, nil
+	}
+}
+
+// checkTableLinkValue 检查配置表链接值是否有效
+func (p *Parser) checkTableLinkValue(srcTable *Table, srcValue any, srcType *gexcels.FieldTypeInfo, path []string, link *TableLink, dstTable *Table, dstField *gexcels.Field) (errs []error) {
+	switch link.kind {
+	case tableLinkKindValue:
+		return p.checkValueLinkValue(srcTable, srcValue, srcType, path, link, dstTable, dstField)
+	case tableLinkKindMapKey:
+		return p.checkMapKeyLinkValue(srcTable, srcValue, srcType, path, link, 0, dstTable, dstField)
+	default:
+		return []error{errTableLink(srcTable.Name, link, "link kind invalid")}
+	}
+}
+
+// checkValueLinkValue 检查配置表值链接值是否有效
+func (p *Parser) checkValueLinkValue(srcTable *Table, srcValue any, srcType *gexcels.FieldTypeInfo, path []string, link *TableLink, dstTable *Table, dstField *gexcels.Field) (errs []error) {
+	if srcValue == nil {
+		return nil
+	}
+
+	switch srcType.Type {
+	case gexcels.FTArray:
+		v := reflect.ValueOf(srcValue)
+		if v.Kind() != reflect.Slice {
+			return []error{errTableLink(srcTable.Name, link, "src value not array")}
+		}
+		for i := 0; i < v.Len(); i++ {
+			errs = append(errs, p.checkValueLinkValue(srcTable, v.Index(i).Interface(), srcType.GetElementType(), path, link, dstTable, dstField)...)
+		}
+		return errs
+	case gexcels.FTMap:
+		v := reflect.ValueOf(srcValue)
+		if v.Kind() != reflect.Map {
+			return []error{errTableLink(srcTable.Name, link, "src value not map")}
+		}
+		for _, k := range v.MapKeys() {
+			vv := v.MapIndex(k)
+			if !vv.IsValid() {
+				continue
+			}
+			errs = append(errs, p.checkValueLinkValue(srcTable, vv.Interface(), srcType.GetMapValueType(), path, link, dstTable, dstField)...)
+		}
+		return errs
+	case gexcels.FTStruct:
+		if len(path) == 0 {
+			return []error{errTableLink(srcTable.Name, link, "LINK on struct must be defined on struct field")}
+		}
+		obj, ok := srcValue.(map[string]any)
+		if !ok {
+			return []error{errTableLink(srcTable.Name, link, "src value not object")}
+		}
+		fieldName := path[0]
+		subValue, ok := obj[fieldName]
+		if !ok || subValue == nil {
+			return nil
+		}
+		sd := p.GetStructByName(srcType.GetName())
+		if sd == nil {
+			return []error{errTableLink(srcTable.Name, link, "struct not found")}
+		}
+		subField := sd.GetFieldByName(fieldName)
+		if subField == nil {
+			return []error{errTableLink(srcTable.Name, link, "src field not found")}
+		}
+		return p.checkValueLinkValue(srcTable, subValue, subField.FieldTypeInfo, path[1:], link, dstTable, dstField)
+	case gexcels.FTEnum:
+		if len(path) != 0 {
+			return []error{errTableLink(srcTable.Name, link, "src field not found")}
+		}
+		return p.checkTableLinkPrimitiveValue(srcTable, srcValue, link, dstTable, dstField)
+	default:
+		if !srcType.Type.Primitive() {
+			return []error{errTableLink(srcTable.Name, link, "src field type invalid")}
+		}
+		if len(path) != 0 {
+			return []error{errTableLink(srcTable.Name, link, "src field not found")}
+		}
+		return p.checkTableLinkPrimitiveValue(srcTable, srcValue, link, dstTable, dstField)
+	}
+}
+
+// checkMapKeyLinkValue 检查配置表映射键链接值是否有效
+func (p *Parser) checkMapKeyLinkValue(srcTable *Table, srcValue any, srcType *gexcels.FieldTypeInfo, path []string, link *TableLink, curMapLevel int, dstTable *Table, dstField *gexcels.Field) (errs []error) {
+	if srcValue == nil {
+		return nil
+	}
+
+	switch srcType.Type {
+	case gexcels.FTArray:
+		v := reflect.ValueOf(srcValue)
+		if v.Kind() != reflect.Slice {
+			return []error{errTableLink(srcTable.Name, link, "src value not array")}
+		}
+		for i := 0; i < v.Len(); i++ {
+			errs = append(errs, p.checkMapKeyLinkValue(srcTable, v.Index(i).Interface(), srcType.GetElementType(), path, link, curMapLevel, dstTable, dstField)...)
+		}
+		return errs
+	case gexcels.FTStruct:
+		if len(path) == 0 {
+			return []error{errTableLink(srcTable.Name, link, "src field not found")}
+		}
+		obj, ok := srcValue.(map[string]any)
+		if !ok {
+			return []error{errTableLink(srcTable.Name, link, "src value not object")}
+		}
+		fieldName := path[0]
+		subValue, ok := obj[fieldName]
+		if !ok || subValue == nil {
+			return nil
+		}
+		sd := p.GetStructByName(srcType.GetName())
+		if sd == nil {
+			return []error{errTableLink(srcTable.Name, link, "struct not found")}
+		}
+		subField := sd.GetFieldByName(fieldName)
+		if subField == nil {
+			return []error{errTableLink(srcTable.Name, link, "src field not found")}
+		}
+		return p.checkMapKeyLinkValue(srcTable, subValue, subField.FieldTypeInfo, path[1:], link, curMapLevel, dstTable, dstField)
+	case gexcels.FTMap:
+		v := reflect.ValueOf(srcValue)
+		if v.Kind() != reflect.Map {
+			return []error{errTableLink(srcTable.Name, link, "src value not map")}
+		}
+
+		curMapLevel++
+		if curMapLevel == link.mapLevel {
+			for _, k := range v.MapKeys() {
+				errs = append(errs, p.checkTableLinkPrimitiveValue(srcTable, k.Interface(), link, dstTable, dstField)...)
+			}
+			return errs
+		}
+
+		vt := srcType.GetMapValueType()
+		if vt.Type != gexcels.FTArray && vt.Type != gexcels.FTMap {
+			return nil
+		}
+		for _, k := range v.MapKeys() {
+			vv := v.MapIndex(k)
+			if !vv.IsValid() {
+				continue
+			}
+			errs = append(errs, p.checkMapKeyLinkValue(srcTable, vv.Interface(), vt, path, link, curMapLevel, dstTable, dstField)...)
+		}
+		return errs
+	default:
+		return nil
+	}
+}
+
+// checkTableLinkPrimitiveValue 检查配置表链接值是否有效
+func (p *Parser) checkTableLinkPrimitiveValue(srcTable *Table, srcValue any, link *TableLink, dstTable *Table, dstField *gexcels.Field) (errs []error) {
+	vv, err := convertValue2PrimitiveFieldType(srcValue, dstField.Type)
+	if err != nil {
+		return []error{err}
+	}
+
+	if dstField.Name == gexcels.TableFieldIDName {
+		if !dstTable.hasEntry(vv) {
+			errs = []error{errTableLink(srcTable.Name, link, "dst.%s=%v not found", dstField.Name, vv)}
+		}
+	} else {
+		if !dstTable.hasUniqueValue(dstField.Name, vv) {
+			errs = []error{errTableLink(srcTable.Name, link, "dst.%s=%v not found", dstField.Name, vv)}
+		}
+	}
+	return errs
 }
 
 // checkLinksBetweenTable 检查配置表之间的链接
@@ -297,46 +587,6 @@ func (p *Parser) checkLinksBetweenTable() (errs []error) {
 			errs = append(errs, err...)
 		}
 	}
-	return
-}
-
-// checkTableLinkValue 字段值链接检查
-// 检查value根据filePath指定的字段路径，是否能攻能成功链接到dstTable中的目标字段
-func checkTableLinkValue(srcTable *Table, srcValue any, dstTable *Table, dstField *gexcels.Field, fieldPath []string, depth int) (errs []error) {
-	v := reflect.ValueOf(srcValue)
-	if v.Kind() == reflect.Slice {
-		for i := 0; i < v.Len(); i++ {
-			vv := v.Index(i)
-			if err := checkTableLinkValue(srcTable, vv.Interface(), dstTable, dstField, fieldPath, depth); err != nil {
-				errs = append(errs, err...)
-			}
-		}
-	} else if v.Kind() == reflect.Map {
-		fieldName := fieldPath[depth]
-		vv := v.MapIndex(reflect.ValueOf(fieldName))
-		if !vv.IsValid() {
-			return nil
-		}
-		errs = checkTableLinkValue(srcTable, vv.Interface(), dstTable, dstField, fieldPath, depth+1)
-	} else {
-		if depth < len(fieldPath) {
-			return []error{errTableLink(srcTable.Name, fieldPath[:depth], dstTable.Name, dstField.Name, "primitive value (%v) on middle path", srcValue)}
-		}
-
-		vv, err := convertValue2PrimitiveFieldType(srcValue, dstField.Type)
-		if err != nil {
-			errs = []error{err}
-		} else if dstField.Name == gexcels.TableFieldIDName {
-			if !dstTable.hasEntry(vv) {
-				errs = []error{errTableLink(srcTable.Name, fieldPath[:depth], dstTable.Name, dstField.Name, "dst.%s=%v not found", dstField.Name, vv)}
-			}
-		} else {
-			if !dstTable.hasUniqueValue(dstField.Name, vv) {
-				errs = []error{errTableLink(srcTable.Name, fieldPath[:depth], dstTable.Name, dstField.Name, "dst.%s=%v not found", dstField.Name, vv)}
-			}
-		}
-	}
-
 	return
 }
 

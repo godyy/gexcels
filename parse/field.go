@@ -7,12 +7,6 @@ import (
 	"strings"
 
 	"github.com/godyy/gexcels"
-	"github.com/godyy/gutils/buffer/bytes"
-)
-
-const (
-	maxStringLength = bytes.MaxStringLength // 支持的string最大长度
-	maxArrayLength  = 32767                 // 最大数组长度
 )
 
 // parsePrimitiveValue 解析primitive字段值
@@ -72,7 +66,7 @@ func parsePrimitiveValue(ft gexcels.FieldType, s string) (any, error) {
 		return b, nil
 
 	case gexcels.FTString:
-		if len(s) > maxStringLength {
+		if len(s) > gexcels.MaxStringLen {
 			return nil, errStringLengthExceedLimit
 		}
 		return s, nil
@@ -95,50 +89,77 @@ func (p *Parser) getCustomFieldType(name string) *gexcels.FieldTypeInfo {
 	return p.customFieldTypes[name]
 }
 
-// hasCustomFieldType 是否有自定义字段类型
-func (p *Parser) hasCustomFieldType(name string) bool {
-	_, ok := p.customFieldTypes[name]
-	return ok
-}
-
 // parseFieldTypeInfo 解析字段类型信息
 func (p *Parser) parseFieldTypeInfo(typeStr string) (*gexcels.FieldTypeInfo, error) {
-	var (
-		ft gexcels.FieldType
-		et gexcels.FieldType
-	)
-
-	if strings.HasPrefix(typeStr, "[]") {
-		ft = gexcels.FTArray
-		typeStr = typeStr[2:]
-	}
-
-	if ft == gexcels.FTArray {
-		et = gexcels.ParsePrimitiveFieldType(typeStr)
-		if et != gexcels.FTUnknown {
-			return gexcels.NewPrimitiveArrayFieldTypeInfo(et), nil
-		} else {
-			if !gexcels.MatchName(typeStr) {
-				return nil, fmt.Errorf("parseFieldTypeInfo: array element name %s invalid", typeStr)
-			}
-			customFieldTypeInfo := p.getCustomFieldType(typeStr)
-			if customFieldTypeInfo == nil {
-				return nil, fmt.Errorf("parseFieldTypeInfo: array element custom field type %s not found", typeStr)
-			}
-			return gexcels.NewArrayFieldTypeInfo(customFieldTypeInfo), nil
+	var parse func(s string) (*gexcels.FieldTypeInfo, error)
+	parse = func(s string) (*gexcels.FieldTypeInfo, error) {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			return nil, fmt.Errorf("parseFieldTypeInfo: empty type")
 		}
-	} else if ft = gexcels.ParsePrimitiveFieldType(typeStr); ft == gexcels.FTUnknown {
-		if !gexcels.MatchName(typeStr) {
-			return nil, fmt.Errorf("parseFieldTypeInfo: custom field type name %s invalid", typeStr)
+
+		if strings.HasPrefix(s, "[]") {
+			// 数组类型：元素类型继续递归解析
+			elem, err := parse(s[2:])
+			if err != nil {
+				return nil, err
+			}
+			return gexcels.NewArrayFieldTypeInfo(elem), nil
 		}
-		customFieldTypeInfo := p.getCustomFieldType(typeStr)
+
+		if strings.HasPrefix(s, "map[") {
+			// map 类型：map[kt]vt
+			// 约束：Excel 单元格用 JSON object 表达，key 天然是 string。
+			// 这里支持将该 string key 转换为 primitive/enum 作为真实 key 类型。
+			end := strings.IndexByte(s, ']')
+			if end <= len("map[") {
+				return nil, fmt.Errorf("parseFieldTypeInfo: map key type invalid: %s", s)
+			}
+			keyStr := strings.TrimSpace(s[len("map["):end])
+			valStr := strings.TrimSpace(s[end+1:])
+			if valStr == "" {
+				return nil, fmt.Errorf("parseFieldTypeInfo: map value type empty: %s", s)
+			}
+
+			var kt *gexcels.FieldTypeInfo
+			if keyType := gexcels.ParsePrimitiveFieldType(keyStr); keyType != gexcels.FTUnknown {
+				kt = gexcels.NewPrimitiveFieldTypeInfo(keyType)
+			} else {
+				if !gexcels.MatchName(keyStr) {
+					return nil, fmt.Errorf("parseFieldTypeInfo: map key type %s invalid", keyStr)
+				}
+				customFieldTypeInfo := p.getCustomFieldType(keyStr)
+				if customFieldTypeInfo == nil {
+					return nil, fmt.Errorf("parseFieldTypeInfo: map key custom field type %s not found", keyStr)
+				}
+				kt = customFieldTypeInfo
+			}
+			if !kt.Type.CanMapKey() {
+				return nil, fmt.Errorf("parseFieldTypeInfo: map key type %s invalid", keyStr)
+			}
+
+			vt, err := parse(valStr)
+			if err != nil {
+				return nil, err
+			}
+			return gexcels.NewMapFieldTypeInfo(kt, vt), nil
+		}
+
+		if ft := gexcels.ParsePrimitiveFieldType(s); ft != gexcels.FTUnknown {
+			return gexcels.NewPrimitiveFieldTypeInfo(ft), nil
+		}
+
+		if !gexcels.MatchName(s) {
+			return nil, fmt.Errorf("parseFieldTypeInfo: custom field type name %s invalid", s)
+		}
+		customFieldTypeInfo := p.getCustomFieldType(s)
 		if customFieldTypeInfo == nil {
-			return nil, fmt.Errorf("parseFieldTypeInfo: custom field type %s not found", typeStr)
+			return nil, fmt.Errorf("parseFieldTypeInfo: custom field type %s not found", s)
 		}
 		return customFieldTypeInfo, nil
-	} else {
-		return gexcels.NewPrimitiveFieldTypeInfo(ft), nil
 	}
+
+	return parse(typeStr)
 }
 
 // parseFieldValue 解析字段值
@@ -149,6 +170,8 @@ func (p *Parser) parseFieldValue(fd *gexcels.Field, s string) (any, error) {
 		return p.parseEnumFieldValue(fd, s)
 	} else if fd.Type == gexcels.FTArray {
 		return p.parseArrayFieldValue(fd, s)
+	} else if fd.Type == gexcels.FTMap {
+		return p.parseMapFieldValue(fd, s)
 	} else if fd.Type == gexcels.FTStruct {
 		return p.parseStructFieldValue(fd, s)
 	} else {
@@ -187,7 +210,21 @@ func (p *Parser) parseArrayFieldValue(fd *gexcels.Field, s string) (any, error) 
 		return nil, err
 	}
 
-	return p.convertJSONArrayValue(fd.GetElementType(), raw, fd.Name)
+	return p.convertJSONArrayValue(fd.FieldTypeInfo, raw, fd.Name)
+}
+
+// parseMapFieldValue 解析 map 字段值
+func (p *Parser) parseMapFieldValue(fd *gexcels.Field, s string) (any, error) {
+	if s == "" {
+		return nil, nil
+	}
+
+	// map 的值采用 JSON object 表达，并复用 json 转换链路做递归类型转换
+	var raw any
+	if err := json.Unmarshal(([]byte)(s), &raw); err != nil {
+		return nil, err
+	}
+	return p.convertFieldJSONValue(fd.FieldTypeInfo, raw, fd.Name)
 }
 
 // getNestedField 获取嵌套的字段

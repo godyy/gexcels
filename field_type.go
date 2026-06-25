@@ -20,6 +20,7 @@ const (
 	FTEnum
 	FTStruct
 	FTArray
+	FTMap
 )
 
 // fieldTypeStrings 字段类型字符串映射
@@ -34,6 +35,7 @@ var fieldTypeStrings = [...]string{
 	FTEnum:    "enum",
 	FTStruct:  "struct",
 	FTArray:   "array",
+	FTMap:     "map",
 }
 
 func (ft FieldType) String() string {
@@ -60,6 +62,20 @@ func (ft FieldType) PrimitiveString() string {
 	return primitiveFieldTypeStrings[ft]
 }
 
+// mapKeyFieldTypes map key 类型映射
+// 仅支持 int32, int64, string, enum 类型
+var mapKeyFieldTypes = map[FieldType]bool{
+	FTInt32:  true,
+	FTInt64:  true,
+	FTString: true,
+	FTEnum:   true,
+}
+
+// CanMapKey 返回是否可以作为 map key 类型
+func (ft FieldType) CanMapKey() bool {
+	return mapKeyFieldTypes[ft]
+}
+
 // primitiveFieldStringTypes primitive FieldType 字符串到值映射
 var primitiveFieldStringTypes = map[string]FieldType{
 	"int32":   FTInt32,
@@ -75,11 +91,19 @@ func ParsePrimitiveFieldType(s string) FieldType {
 	return primitiveFieldStringTypes[s]
 }
 
+// MaxStringLen 最大字符串长度 FTString.
+const MaxStringLen = 32767
+
+// MaxElementLen 最大元素数量, 用于限制 FTArray 和 FTMap 类型字段的长度.
+const MaxElementLen = 32767
+
 // 字段类型参数索引.
 const (
 	_              = iota
 	ftpName        // 类型名称. for FTStruct, FTEnum
 	ftpElementType // 元素类型. for FTArray
+	ftpMapKeyType  // map key type. for FTMap
+	ftpMapValType  // map value type. for FTMap
 )
 
 // FieldTypeInfo 字段类型信息
@@ -108,15 +132,39 @@ func (i *FieldTypeInfo) GetElementType() *FieldTypeInfo {
 	return i.params[ftpElementType].(*FieldTypeInfo)
 }
 
+// setMapKeyType 设置 map 的 key 类型
+func (i *FieldTypeInfo) setMapKeyType(kt *FieldTypeInfo) {
+	i.params[ftpMapKeyType] = kt
+}
+
+// GetMapKeyType 获取 map 的 key 类型
+func (i *FieldTypeInfo) GetMapKeyType() *FieldTypeInfo {
+	return i.params[ftpMapKeyType].(*FieldTypeInfo)
+}
+
+// setMapValueType 设置 map 的 value 类型
+func (i *FieldTypeInfo) setMapValueType(vt *FieldTypeInfo) {
+	i.params[ftpMapValType] = vt
+}
+
+// GetMapValueType 获取 map 的 value 类型
+func (i *FieldTypeInfo) GetMapValueType() *FieldTypeInfo {
+	return i.params[ftpMapValType].(*FieldTypeInfo)
+}
+
 // String 将 FieldTypeInfo 转换为字符串形式
 func (i *FieldTypeInfo) String() string {
 	switch i.Type {
+	case FTEnum:
+		return i.GetName()
 	case FTStruct:
 		return i.GetName()
 	case FTArray:
 		return "[]" + i.GetElementType().String()
+	case FTMap:
+		return "map[" + i.GetMapKeyType().String() + "]" + i.GetMapValueType().String()
 	default:
-		return primitiveFieldTypeStrings[i.Type]
+		return i.Type.String()
 	}
 }
 
@@ -180,33 +228,71 @@ func NewArrayFieldTypeInfo(et *FieldTypeInfo) *FieldTypeInfo {
 	return info
 }
 
+// NewMapFieldTypeInfo 创建 map 字段类型信息
+func NewMapFieldTypeInfo(kt *FieldTypeInfo, vt *FieldTypeInfo) *FieldTypeInfo {
+	if kt == nil {
+		panic("gexcels: NewMapFieldTypeInfo: key type is nil")
+	}
+	if vt == nil {
+		panic("gexcels: NewMapFieldTypeInfo: value type is nil")
+	}
+	info := newFieldTypeInfo(FTMap)
+	info.setMapKeyType(kt)
+	info.setMapValueType(vt)
+	return info
+}
+
 // ParseFieldTypeInfo 解析字段类型信息
 func ParseFieldTypeInfo(s string) (*FieldTypeInfo, error) {
-	var (
-		ft FieldType
-		et FieldType
-	)
-
-	if strings.HasPrefix(s, "[]") {
-		ft = FTArray
-		s = s[2:]
-	}
-
-	if ft == FTArray {
-		et = ParsePrimitiveFieldType(s)
-		if et == FTUnknown {
-			if !MatchName(s) {
-				return nil, fmt.Errorf("gexcels: ParseFieldTypeInfo: array element struct name %s invalid", s)
-			}
-			return NewStructArrayFieldTypeInfo(s), nil
+	var parse func(s string) (*FieldTypeInfo, error)
+	parse = func(s string) (*FieldTypeInfo, error) {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			return nil, fmt.Errorf("gexcels: ParseFieldTypeInfo: empty type")
 		}
-		return NewPrimitiveArrayFieldTypeInfo(et), nil
-	} else if ft = ParsePrimitiveFieldType(s); ft == FTUnknown {
+
+		if strings.HasPrefix(s, "[]") {
+			elem, err := parse(s[2:])
+			if err != nil {
+				return nil, err
+			}
+			return NewArrayFieldTypeInfo(elem), nil
+		}
+
+		if strings.HasPrefix(s, "map[") {
+			// map 类型表达式：map[kt]vt
+			// 注意：这里不依赖正则，目的是支持 vt 继续递归（如 map[string][]Foo）
+			end := strings.IndexByte(s, ']')
+			if end <= len("map[") {
+				return nil, fmt.Errorf("gexcels: ParseFieldTypeInfo: map key type invalid: %s", s)
+			}
+			keyStr := strings.TrimSpace(s[len("map["):end])
+			valStr := strings.TrimSpace(s[end+1:])
+			if valStr == "" {
+				return nil, fmt.Errorf("gexcels: ParseFieldTypeInfo: map value type empty: %s", s)
+			}
+
+			keyType := ParsePrimitiveFieldType(keyStr)
+			if keyType == FTUnknown {
+				return nil, fmt.Errorf("gexcels: ParseFieldTypeInfo: map key type %s invalid", keyStr)
+			}
+			kt := NewPrimitiveFieldTypeInfo(keyType)
+			vt, err := parse(valStr)
+			if err != nil {
+				return nil, err
+			}
+			return NewMapFieldTypeInfo(kt, vt), nil
+		}
+
+		if ft := ParsePrimitiveFieldType(s); ft != FTUnknown {
+			return NewPrimitiveFieldTypeInfo(ft), nil
+		}
+
 		if !MatchName(s) {
-			return nil, fmt.Errorf("gexcels: ParseFieldTypeInfo: array element struct name %s invalid", s)
+			return nil, fmt.Errorf("gexcels: ParseFieldTypeInfo: struct name %s invalid", s)
 		}
 		return NewStructFieldTypeInfo(s), nil
-	} else {
-		return NewPrimitiveFieldTypeInfo(ft), nil
 	}
+
+	return parse(s)
 }

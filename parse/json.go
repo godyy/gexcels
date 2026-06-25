@@ -3,6 +3,7 @@ package parse
 import (
 	"fmt"
 	"math"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -27,29 +28,31 @@ func (p *Parser) convertFieldJSONValue(ti *gexcels.FieldTypeInfo, raw any, path 
 
 	switch ti.Type {
 	case gexcels.FTInt32, gexcels.FTInt64, gexcels.FTFloat32, gexcels.FTFloat64, gexcels.FTBool, gexcels.FTString:
-		return convertFieldJSONPrimitive(ti.Type, raw, path)
+		return convertFieldJSONPrimitive(ti, raw, path)
 	case gexcels.FTEnum:
-		return p.convertJSONEnumValue(ti.GetName(), raw, path)
+		return p.convertJSONEnumValue(ti, raw, path)
 	case gexcels.FTStruct:
-		return p.convertJSONStructValue(ti.GetName(), raw, path)
+		return p.convertJSONStructValue(ti, raw, path)
 	case gexcels.FTArray:
 		arr, ok := raw.([]any)
 		if !ok {
 			return nil, fmt.Errorf("%s must be json array", path)
 		}
-		if len(arr) > maxArrayLength {
+		if len(arr) > gexcels.MaxElementLen {
 			return nil, errArrayLengthExceedLimit
 		}
-		return p.convertJSONArrayValue(ti.GetElementType(), arr, path)
+		return p.convertJSONArrayValue(ti, arr, path)
+	case gexcels.FTMap:
+		return p.convertJSONMapValue(ti, raw, path)
 	default:
 		return nil, errFieldTypeInvalid(ti.Type)
 	}
 }
 
 // convertFieldJSONPrimitive 将json raw对象转换为原始类型值
-func convertFieldJSONPrimitive(ft gexcels.FieldType, raw any, path string) (any, error) {
+func convertFieldJSONPrimitive(ft *gexcels.FieldTypeInfo, raw any, path string) (any, error) {
 	if raw == nil {
-		switch ft {
+		switch ft.Type {
 		case gexcels.FTInt32:
 			return int32(0), nil
 		case gexcels.FTInt64:
@@ -67,7 +70,7 @@ func convertFieldJSONPrimitive(ft gexcels.FieldType, raw any, path string) (any,
 		}
 	}
 
-	switch ft {
+	switch ft.Type {
 	case gexcels.FTInt32:
 		i64, err := convertJSONInt64(raw, path)
 		if err != nil {
@@ -108,7 +111,7 @@ func convertFieldJSONPrimitive(ft gexcels.FieldType, raw any, path string) (any,
 		if !ok {
 			return nil, fmt.Errorf("%s must be string", path)
 		}
-		if len(s) > maxStringLength {
+		if len(s) > gexcels.MaxElementLen {
 			return nil, pkg_errors.WithMessagef(errStringLengthExceedLimit, "field %s", path)
 		}
 		return s, nil
@@ -184,10 +187,10 @@ func convertJSONFloat64(raw any, path string) (float64, error) {
 }
 
 // convertJSONEnumValue 将json raw对象转换为枚举类型值
-func (p *Parser) convertJSONEnumValue(enumName string, raw any, path string) (any, error) {
-	enum := p.GetEnum(enumName)
+func (p *Parser) convertJSONEnumValue(ft *gexcels.FieldTypeInfo, raw any, path string) (any, error) {
+	enum := p.GetEnum(ft.GetName())
 	if enum == nil {
-		return nil, errEnumNotDefine(enumName)
+		return nil, errEnumNotDefine(ft.GetName())
 	}
 
 	s, ok := raw.(string)
@@ -201,16 +204,16 @@ func (p *Parser) convertJSONEnumValue(enumName string, raw any, path string) (an
 
 	val, ok := enum.GetItemValueByName(s)
 	if !ok {
-		return nil, errEnumItemNotDefine(enumName, s)
+		return nil, errEnumItemNotDefine(enum.Name, s)
 	}
 	return val, nil
 }
 
 // convertJSONStructValue 将json raw对象转换为结构体类型值, 结构体类型用 map[string]any 替代.
-func (p *Parser) convertJSONStructValue(structName string, raw any, path string) (any, error) {
-	sd := p.GetStructByName(structName)
+func (p *Parser) convertJSONStructValue(ft *gexcels.FieldTypeInfo, raw any, path string) (any, error) {
+	sd := p.GetStructByName(ft.GetName())
 	if sd == nil {
-		return nil, errStructNotDefine(structName)
+		return nil, errStructNotDefine(ft.GetName())
 	}
 
 	m, ok := raw.(map[string]any)
@@ -241,8 +244,126 @@ func (p *Parser) convertJSONStructValue(structName string, raw any, path string)
 	return out, nil
 }
 
+// convertJSONMapValue 将 json raw 对象转换为 map 类型值。
+//
+// 约定：map 通过 json object 表达（map[string]any），因此 key 当前仅支持 string。
+// value 会按 valueType 递归转换（支持 primitive/enum/struct/array/map）。
+func (p *Parser) convertJSONMapValue(ft *gexcels.FieldTypeInfo, raw any, path string) (any, error) {
+	keyType := ft.GetMapKeyType()
+	valueType := ft.GetMapValueType()
+	if keyType == nil {
+		return nil, fmt.Errorf("%s map key type is nil", path)
+	}
+	if valueType == nil {
+		return nil, fmt.Errorf("%s map value type is nil", path)
+	}
+
+	m, ok := raw.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("%s must be json object", path)
+	}
+	if len(m) > gexcels.MaxElementLen {
+		return nil, errArrayLengthExceedLimit
+	}
+
+	keyGoType, err := p.getMapKeyType(keyType)
+	if err != nil {
+		return nil, pkg_errors.WithMessagef(err, "%s map key type invalid", path)
+	}
+	outType := reflect.MapOf(keyGoType, reflect.TypeOf((*any)(nil)).Elem())
+	out := reflect.MakeMapWithSize(outType, len(m))
+	for k, v := range m {
+		if v == nil {
+			continue
+		}
+		key, err := p.parseJSONMapKey(keyType, k, path)
+		if err != nil {
+			return nil, err
+		}
+		fieldPath := path + "[" + k + "]"
+		c, err := p.convertFieldJSONValue(valueType, v, fieldPath)
+		if err != nil {
+			return nil, err
+		}
+		if c != nil {
+			keyVal := reflect.ValueOf(key)
+			if keyVal.Type() != keyGoType {
+				if keyVal.Type().ConvertibleTo(keyGoType) {
+					keyVal = keyVal.Convert(keyGoType)
+				} else {
+					return nil, fmt.Errorf("%s map key type mismatch", path)
+				}
+			}
+			out.SetMapIndex(keyVal, reflect.ValueOf(c))
+		}
+	}
+	return out.Interface(), nil
+}
+
+func (p *Parser) getMapKeyType(keyType *gexcels.FieldTypeInfo) (reflect.Type, error) {
+	switch keyType.Type {
+	case gexcels.FTInt32:
+		return reflect.TypeOf(int32(0)), nil
+	case gexcels.FTInt64:
+		return reflect.TypeOf(int64(0)), nil
+	case gexcels.FTFloat32:
+		return reflect.TypeOf(float32(0)), nil
+	case gexcels.FTFloat64:
+		return reflect.TypeOf(float64(0)), nil
+	case gexcels.FTBool:
+		return reflect.TypeOf(false), nil
+	case gexcels.FTString:
+		return reflect.TypeOf(""), nil
+	case gexcels.FTEnum:
+		enum := p.GetEnum(keyType.GetName())
+		if enum == nil {
+			return nil, errEnumNotDefine(keyType.GetName())
+		}
+		switch enum.Type {
+		case gexcels.FTInt32:
+			return reflect.TypeOf(int32(0)), nil
+		case gexcels.FTString:
+			return reflect.TypeOf(""), nil
+		default:
+			return nil, errFieldTypeInvalid(enum.Type)
+		}
+	default:
+		return nil, fmt.Errorf("map key type %s invalid, only primitive or enum supported", keyType.Type)
+	}
+}
+
+// parseJSONMapKey 解析json map key字符串为go类型.
+func (p *Parser) parseJSONMapKey(keyType *gexcels.FieldTypeInfo, keyStr string, path string) (any, error) {
+	keyStr = strings.TrimSpace(keyStr)
+	if keyStr == "" {
+		return nil, fmt.Errorf("%s map key is empty", path)
+	}
+
+	switch keyType.Type {
+	case gexcels.FTInt32:
+		i, err := strconv.ParseInt(keyStr, 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("%s map key invalid int32", path)
+		}
+		return int32(i), nil
+	case gexcels.FTInt64:
+		i, err := strconv.ParseInt(keyStr, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("%s map key invalid int64", path)
+		}
+		return i, nil
+	case gexcels.FTString:
+		return keyStr, nil
+	case gexcels.FTEnum:
+		return p.convertJSONEnumValue(keyType, keyStr, path+"(key)")
+	default:
+		return nil, fmt.Errorf("%s map key type %s invalid", path, keyType.Type)
+	}
+}
+
 // convertJSONArrayValue 将json raw对象转换为数组类型值.
-func (p *Parser) convertJSONArrayValue(elem *gexcels.FieldTypeInfo, raw any, path string) (any, error) {
+func (p *Parser) convertJSONArrayValue(ft *gexcels.FieldTypeInfo, raw any, path string) (any, error) {
+	elem := ft.GetElementType()
 	if elem == nil {
 		return nil, fmt.Errorf("%s element type is nil", path)
 	}
@@ -251,7 +372,7 @@ func (p *Parser) convertJSONArrayValue(elem *gexcels.FieldTypeInfo, raw any, pat
 	if !ok {
 		return nil, fmt.Errorf("%s must be json array", path)
 	}
-	if len(arr) > maxArrayLength {
+	if len(arr) > gexcels.MaxElementLen {
 		return nil, errArrayLengthExceedLimit
 	}
 
@@ -259,7 +380,7 @@ func (p *Parser) convertJSONArrayValue(elem *gexcels.FieldTypeInfo, raw any, pat
 	case gexcels.FTInt32:
 		out := make([]int32, len(arr))
 		for i, v := range arr {
-			c, err := convertFieldJSONPrimitive(gexcels.FTInt32, v, fmt.Sprintf("%s[%d]", path, i))
+			c, err := convertFieldJSONPrimitive(elem, v, fmt.Sprintf("%s[%d]", path, i))
 			if err != nil {
 				return nil, err
 			}
@@ -269,7 +390,7 @@ func (p *Parser) convertJSONArrayValue(elem *gexcels.FieldTypeInfo, raw any, pat
 	case gexcels.FTInt64:
 		out := make([]int64, len(arr))
 		for i, v := range arr {
-			c, err := convertFieldJSONPrimitive(gexcels.FTInt64, v, fmt.Sprintf("%s[%d]", path, i))
+			c, err := convertFieldJSONPrimitive(elem, v, fmt.Sprintf("%s[%d]", path, i))
 			if err != nil {
 				return nil, err
 			}
@@ -279,7 +400,7 @@ func (p *Parser) convertJSONArrayValue(elem *gexcels.FieldTypeInfo, raw any, pat
 	case gexcels.FTFloat32:
 		out := make([]float32, len(arr))
 		for i, v := range arr {
-			c, err := convertFieldJSONPrimitive(gexcels.FTFloat32, v, fmt.Sprintf("%s[%d]", path, i))
+			c, err := convertFieldJSONPrimitive(elem, v, fmt.Sprintf("%s[%d]", path, i))
 			if err != nil {
 				return nil, err
 			}
@@ -289,7 +410,7 @@ func (p *Parser) convertJSONArrayValue(elem *gexcels.FieldTypeInfo, raw any, pat
 	case gexcels.FTFloat64:
 		out := make([]float64, len(arr))
 		for i, v := range arr {
-			c, err := convertFieldJSONPrimitive(gexcels.FTFloat64, v, fmt.Sprintf("%s[%d]", path, i))
+			c, err := convertFieldJSONPrimitive(elem, v, fmt.Sprintf("%s[%d]", path, i))
 			if err != nil {
 				return nil, err
 			}
@@ -299,7 +420,7 @@ func (p *Parser) convertJSONArrayValue(elem *gexcels.FieldTypeInfo, raw any, pat
 	case gexcels.FTBool:
 		out := make([]bool, len(arr))
 		for i, v := range arr {
-			c, err := convertFieldJSONPrimitive(gexcels.FTBool, v, fmt.Sprintf("%s[%d]", path, i))
+			c, err := convertFieldJSONPrimitive(elem, v, fmt.Sprintf("%s[%d]", path, i))
 			if err != nil {
 				return nil, err
 			}
@@ -309,7 +430,7 @@ func (p *Parser) convertJSONArrayValue(elem *gexcels.FieldTypeInfo, raw any, pat
 	case gexcels.FTString:
 		out := make([]string, len(arr))
 		for i, v := range arr {
-			c, err := convertFieldJSONPrimitive(gexcels.FTString, v, fmt.Sprintf("%s[%d]", path, i))
+			c, err := convertFieldJSONPrimitive(elem, v, fmt.Sprintf("%s[%d]", path, i))
 			if err != nil {
 				return nil, err
 			}
@@ -319,7 +440,7 @@ func (p *Parser) convertJSONArrayValue(elem *gexcels.FieldTypeInfo, raw any, pat
 	case gexcels.FTEnum:
 		out := make([]any, len(arr))
 		for i, v := range arr {
-			c, err := p.convertJSONEnumValue(elem.GetName(), v, fmt.Sprintf("%s[%d]", path, i))
+			c, err := p.convertJSONEnumValue(elem, v, fmt.Sprintf("%s[%d]", path, i))
 			if err != nil {
 				return nil, err
 			}
@@ -329,7 +450,27 @@ func (p *Parser) convertJSONArrayValue(elem *gexcels.FieldTypeInfo, raw any, pat
 	case gexcels.FTStruct:
 		out := make([]any, len(arr))
 		for i, v := range arr {
-			c, err := p.convertJSONStructValue(elem.GetName(), v, fmt.Sprintf("%s[%d]", path, i))
+			c, err := p.convertJSONStructValue(elem, v, fmt.Sprintf("%s[%d]", path, i))
+			if err != nil {
+				return nil, err
+			}
+			out[i] = c
+		}
+		return out, nil
+	case gexcels.FTMap:
+		out := make([]any, len(arr))
+		for i, v := range arr {
+			c, err := p.convertJSONMapValue(elem, v, fmt.Sprintf("%s[%d]", path, i))
+			if err != nil {
+				return nil, err
+			}
+			out[i] = c
+		}
+		return out, nil
+	case gexcels.FTArray:
+		out := make([]any, len(arr))
+		for i, v := range arr {
+			c, err := p.convertJSONArrayValue(elem, v, fmt.Sprintf("%s[%d]", path, i))
 			if err != nil {
 				return nil, err
 			}
