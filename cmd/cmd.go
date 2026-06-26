@@ -16,15 +16,17 @@ import (
 )
 
 var (
-	excelDir  = flag.String("excel-dir", "", "excel directory")
-	tag       = flag.String("tag", "", "specify tags for filtering fields, e.g. \"c/s\"")
-	sCodeKind = flag.String("code-kind", "go", "for exporting code, only has \"go\" now")
-	sDataKind = flag.String("data-kind", "json", "for exporting data, has [\"json\", \"bytes\", \"bson\"]")
-	codeDir   = flag.String("code-dir", "", "output code directory")
-	dataDir   = flag.String("data-dir", "", "output data directory")
-	goPackage = flag.String("go-package", "", "go package name for exporting go code")
-	mongoURI  = flag.String("mongo-uri", "", "mongo uri for exporting bson data, must specified when data kind is \"bson\"")
-	mongoDB   = flag.String("mongo-db", "", "mongo db name for exporting bson data, must specified when data kind is \"bson\"")
+	excelDir         = flag.String("excel-dir", "", "excel directory")
+	tag              = flag.String("tag", "", "specify tags for filtering fields, e.g. \"c/s\"")
+	sCodeKind        = flag.String("code-kind", "go", "for exporting code, has [\"go\", \"csharp\"]")
+	sDataKind        = flag.String("data-kind", "json", "for exporting data, has [\"json\", \"bytes\", \"bson\"]")
+	codeDir          = flag.String("code-dir", "", "output code directory")
+	dataDir          = flag.String("data-dir", "", "output data directory")
+	goPackage        = flag.String("go-package", "", "go package name for exporting go code")
+	csharpNamespace  = flag.String("csharp-namespace", "", "namespace for exporting csharp code")
+	csharpTablesType = flag.String("csharp-tables-class", "Tables", "static manager class name for exporting csharp code")
+	mongoURI         = flag.String("mongo-uri", "", "mongo uri for exporting bson data, must specified when data kind is \"bson\"")
+	mongoDB          = flag.String("mongo-db", "", "mongo db name for exporting bson data, must specified when data kind is \"bson\"")
 )
 
 func main() {
@@ -57,6 +59,10 @@ func main() {
 		if *goPackage == "" {
 			log.Fatalf("go package name empty")
 		}
+	case export.CodeCSharp:
+		if *csharpNamespace == "" {
+			log.Fatalf("csharp namespace empty")
+		}
 	}
 
 	if *codeDir == "" {
@@ -88,6 +94,13 @@ func main() {
 	switch codeKind {
 	case export.CodeGo:
 		if err := code.ExportGo(parser, *codeDir, &codeOptions, &code.GoOptions{PkgName: *goPackage}); err != nil {
+			log.Fatalf("export code failed: %v", err)
+		}
+	case export.CodeCSharp:
+		if err := code.ExportCSharp(parser, *codeDir, &codeOptions, &code.CSharpOptions{
+			Namespace:       *csharpNamespace,
+			TablesClassName: *csharpTablesType,
+		}); err != nil {
 			log.Fatalf("export code failed: %v", err)
 		}
 	}

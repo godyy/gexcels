@@ -6,6 +6,7 @@ type CodeKind int8
 const (
 	_      = CodeKind(iota)
 	CodeGo // golang
+	CodeCSharp
 	codeKindMax
 )
 
@@ -15,7 +16,8 @@ func (ck CodeKind) Valid() bool {
 }
 
 var codeKindStrings = [...]string{
-	CodeGo: "go",
+	CodeGo:     "go",
+	CodeCSharp: "csharp",
 }
 
 // String 转换为字符串
@@ -24,7 +26,10 @@ func (ck CodeKind) String() string {
 }
 
 var codeStringKinds = map[string]CodeKind{
-	CodeGo.String(): CodeGo,
+	CodeGo.String():     CodeGo,
+	CodeCSharp.String(): CodeCSharp,
+	"c#":                CodeCSharp,
+	"cs":                CodeCSharp,
 }
 
 // FromString 从字符串转换，返回是否成功

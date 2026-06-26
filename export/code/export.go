@@ -61,7 +61,8 @@ type creator func(parser *parse.Parser, path string, options *Options, kindOptio
 
 // creators 导出器构造函数映射
 var creators = map[export.CodeKind]creator{
-	export.CodeGo: createGoExporter,
+	export.CodeGo:     createGoExporter,
+	export.CodeCSharp: createCSharpExporter,
 }
 
 // doExport 将解析出的配置表导出为代码
