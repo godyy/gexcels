@@ -16,14 +16,18 @@ func (ft FieldType) CanEnum() bool {
 }
 
 const (
-	EnumColBegin    = 0 // 开始定义枚举的列索引
-	EnumColItemName = 0 // 枚举项名称列索引
-	EnumColType     = 1 // 枚举项类型列索引
-	EnumColValue    = 1 // 枚举项值列索引
-	EnumColDesc     = 2 // 枚举描述列索引
+	EnumColTag      = 0 // 枚举项标签列索引
+	EnumColBegin    = 1 // 开始定义枚举的列索引
+	EnumColItemName = 1 // 枚举项名称列索引
+	EnumColType     = 2 // 枚举项类型列索引
+	EnumColValue    = 2 // 枚举项值列索引
+	EnumColDesc     = 3 // 枚举描述列索引
 
-	EnumCols = 3 // 枚举列数
+	EnumCols = 4 // 枚举列数
 )
+
+// EnumRowFirstEntry 枚举项首行.
+const EnumRowFirstEntry = 1
 
 // Enum 枚举.
 type Enum struct {

@@ -257,8 +257,8 @@ func (p *Parser) checkTableLinkTable(td *Table, link *TableLink) (errs []error) 
 		return []error{errTableLink(td.Name, link, "dst field not found")}
 	} else if !dstTableField.Unique() {
 		return []error{errTableLink(td.Name, link, "dst field not Unique or not export method")}
-	} else if !dstTableField.Type.Primitive() {
-		return []error{errTableLink(td.Name, link, "dst field type not primitive")}
+	} else if !(dstTableField.Type.Primitive() || dstTableField.Type == gexcels.FTEnum) {
+		return []error{errTableLink(td.Name, link, "dst field type not primitive or enum")}
 	} else {
 		dstField = dstTableField.Field
 	}
@@ -267,9 +267,9 @@ func (p *Parser) checkTableLinkTable(td *Table, link *TableLink) (errs []error) 
 	var validateErr error
 	switch link.kind {
 	case tableLinkKindValue:
-		validateErr = p.validateValueLinkSource(srcRootField.FieldTypeInfo, path, dstField.Type)
+		validateErr = p.validateValueLinkSource(srcRootField.FieldTypeInfo, path, dstField.FieldTypeInfo)
 	case tableLinkKindMapKey:
-		validateErr = p.validateMapKeyLinkSource(srcRootField.FieldTypeInfo, path, link.mapLevel, dstField.Type)
+		validateErr = p.validateMapKeyLinkSource(srcRootField.FieldTypeInfo, path, link.mapLevel, dstField.FieldTypeInfo)
 	default:
 		validateErr = fmt.Errorf("link kind invalid")
 	}
@@ -297,19 +297,19 @@ func (p *Parser) checkTableLinkTable(td *Table, link *TableLink) (errs []error) 
 }
 
 // validateValueLinkSource 检查配置表值链接值类型是否匹配
-func (p *Parser) validateValueLinkSource(srcType *gexcels.FieldTypeInfo, path []string, dstType gexcels.FieldType) error {
+func (p *Parser) validateValueLinkSource(srcType *gexcels.FieldTypeInfo, path []string, dstType *gexcels.FieldTypeInfo) error {
 	leafType, err := p.getValueLeafType(srcType, path)
 	if err != nil {
 		return err
 	}
-	if leafType != dstType {
+	if leafType.Type != dstType.Type || (leafType.Type == gexcels.FTEnum && leafType.GetName() != dstType.GetName()) {
 		return fmt.Errorf("field type not match")
 	}
 	return nil
 }
 
 // getValueLeafType 获取配置表字段的叶子类型
-func (p *Parser) getValueLeafType(ti *gexcels.FieldTypeInfo, path []string) (gexcels.FieldType, error) {
+func (p *Parser) getValueLeafType(ti *gexcels.FieldTypeInfo, path []string) (*gexcels.FieldTypeInfo, error) {
 	switch ti.Type {
 	case gexcels.FTArray:
 		return p.getValueLeafType(ti.GetElementType(), path)
@@ -317,39 +317,32 @@ func (p *Parser) getValueLeafType(ti *gexcels.FieldTypeInfo, path []string) (gex
 		return p.getValueLeafType(ti.GetMapValueType(), path)
 	case gexcels.FTStruct:
 		if len(path) == 0 {
-			return gexcels.FTUnknown, fmt.Errorf("LINK on struct must be defined on struct field")
+			return nil, fmt.Errorf("LINK on struct must be defined on struct field")
 		}
 		sd := p.GetStructByName(ti.GetName())
 		if sd == nil {
-			return gexcels.FTUnknown, fmt.Errorf("struct %s not define", ti.GetName())
+			return nil, fmt.Errorf("struct %s not define", ti.GetName())
 		}
 		fd := sd.GetFieldByName(path[0])
 		if fd == nil {
-			return gexcels.FTUnknown, fmt.Errorf("src field not found")
+			return nil, fmt.Errorf("src field not found")
 		}
 		return p.getValueLeafType(fd.FieldTypeInfo, path[1:])
 	case gexcels.FTEnum:
-		enum := p.GetEnum(ti.GetName())
-		if enum == nil {
-			return gexcels.FTUnknown, fmt.Errorf("enum %s not define", ti.GetName())
-		}
-		if len(path) != 0 {
-			return gexcels.FTUnknown, fmt.Errorf("src field not found")
-		}
-		return enum.Type, nil
+		return ti, nil
 	default:
 		if !ti.Type.Primitive() {
-			return gexcels.FTUnknown, fmt.Errorf("src field type invalid")
+			return nil, fmt.Errorf("src field type invalid")
 		}
 		if len(path) != 0 {
-			return gexcels.FTUnknown, fmt.Errorf("src field not found")
+			return nil, fmt.Errorf("src field not found")
 		}
-		return ti.Type, nil
+		return ti, nil
 	}
 }
 
 // validateMapKeyLinkSource 检查配置表映射键链接值类型是否匹配
-func (p *Parser) validateMapKeyLinkSource(srcType *gexcels.FieldTypeInfo, path []string, mapLevel int, dstType gexcels.FieldType) error {
+func (p *Parser) validateMapKeyLinkSource(srcType *gexcels.FieldTypeInfo, path []string, mapLevel int, dstType *gexcels.FieldTypeInfo) error {
 	if mapLevel <= 0 {
 		return fmt.Errorf("map level invalid")
 	}
@@ -361,51 +354,43 @@ func (p *Parser) validateMapKeyLinkSource(srcType *gexcels.FieldTypeInfo, path [
 	if !ok {
 		return fmt.Errorf("map level %d not exist", mapLevel)
 	}
-	if keyType != dstType {
+	if keyType.Type != dstType.Type || (keyType.Type == gexcels.FTEnum && keyType.GetName() != dstType.GetName()) {
 		return fmt.Errorf("field type not match")
 	}
 	return nil
 }
 
 // findMapKeyTypeAtLevel 按照层级查找映射键类型
-func (p *Parser) findMapKeyTypeAtLevel(ti *gexcels.FieldTypeInfo, path []string, targetLevel int, curLevel int) (gexcels.FieldType, bool, error) {
+func (p *Parser) findMapKeyTypeAtLevel(ti *gexcels.FieldTypeInfo, path []string, targetLevel int, curLevel int) (*gexcels.FieldTypeInfo, bool, error) {
 	switch ti.Type {
 	case gexcels.FTArray:
 		return p.findMapKeyTypeAtLevel(ti.GetElementType(), path, targetLevel, curLevel)
 	case gexcels.FTStruct:
 		if len(path) == 0 {
-			return gexcels.FTUnknown, false, fmt.Errorf("src field not found")
+			return nil, false, fmt.Errorf("src field not found")
 		}
 		sd := p.GetStructByName(ti.GetName())
 		if sd == nil {
-			return gexcels.FTUnknown, false, fmt.Errorf("struct %s not define", ti.GetName())
+			return nil, false, fmt.Errorf("struct %s not define", ti.GetName())
 		}
 		fd := sd.GetFieldByName(path[0])
 		if fd == nil {
-			return gexcels.FTUnknown, false, fmt.Errorf("src field not found")
+			return nil, false, fmt.Errorf("src field not found")
 		}
 		return p.findMapKeyTypeAtLevel(fd.FieldTypeInfo, path[1:], targetLevel, curLevel)
 	case gexcels.FTMap:
 		curLevel++
 		if curLevel == targetLevel {
-			kt := ti.GetMapKeyType()
-			if kt.Type == gexcels.FTEnum {
-				enum := p.GetEnum(kt.GetName())
-				if enum == nil {
-					return gexcels.FTUnknown, false, fmt.Errorf("enum %s not define", kt.GetName())
-				}
-				return enum.Type, true, nil
-			}
-			return kt.Type, true, nil
+			return ti.GetMapKeyType(), true, nil
 		}
 
 		vt := ti.GetMapValueType()
 		if vt.Type == gexcels.FTArray || vt.Type == gexcels.FTMap {
 			return p.findMapKeyTypeAtLevel(vt, path, targetLevel, curLevel)
 		}
-		return gexcels.FTUnknown, false, nil
+		return nil, false, nil
 	default:
-		return gexcels.FTUnknown, false, nil
+		return nil, false, nil
 	}
 }
 

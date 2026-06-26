@@ -9,7 +9,7 @@ import (
 )
 
 func TestParse(t *testing.T) {
-	options := &Options{}
+	options := &Options{Tags: []gexcels.Tag{"s"}}
 	_, err := Parse("../internal/test/excels", options)
 	if err != nil {
 		t.Fatal(err)
@@ -17,7 +17,7 @@ func TestParse(t *testing.T) {
 }
 
 func TestParseOnlyFields(t *testing.T) {
-	options := &Options{OnlyFields: true}
+	options := &Options{OnlyFields: true, Tags: []gexcels.Tag{"s"}}
 	_, err := Parse("../internal/test/excels", options)
 	if err != nil {
 		t.Fatal(err)

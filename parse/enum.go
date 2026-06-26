@@ -1,7 +1,6 @@
 package parse
 
 import (
-	"errors"
 	"fmt"
 	"regexp"
 
@@ -100,8 +99,8 @@ func (p *Parser) parseEnumFile(path string) error {
 
 // parseEnumOfSheet 解析枚举表
 func (p *Parser) parseEnumSheet(sheet *xlsx.Sheet) error {
-	if sheet.MaxCol < gexcels.EnumCols {
-		return errors.New("enum sheet has no enough columns")
+	if sheet.MaxRow < gexcels.EnumRowFirstEntry || sheet.MaxCol < gexcels.EnumCols {
+		return errSheetRowsOrColsNotMatch
 	}
 
 	var (
@@ -110,6 +109,7 @@ func (p *Parser) parseEnumSheet(sheet *xlsx.Sheet) error {
 		err  error
 	)
 
+	row = gexcels.EnumRowFirstEntry
 	for row < sheet.MaxRow {
 		var newRow int
 		enum, newRow, err = p.parseEnum(sheet, row)
@@ -140,6 +140,27 @@ func (p *Parser) parseEnum(sheet *xlsx.Sheet, row int) (*Enum, int, error) {
 		return nil, 0, fmt.Errorf("invalid begin \"%s\"", enumBegin)
 	}
 	enumName := matches[1]
+
+	enumTag, err := getSheetValue(sheet, row, gexcels.EnumColTag, true)
+	if err != nil {
+		return nil, 0, pkg_errors.WithMessage(err, "get tag cell")
+	}
+	if ok, valid := p.checkTag(enumTag); !valid {
+		return nil, 0, fmt.Errorf("invalid tag %s", enumTag)
+	} else if !ok {
+		row += 1
+		for row < sheet.MaxRow {
+			itemName, err := getSheetValue(sheet, row, gexcels.EnumColItemName, true)
+			if err != nil {
+				return nil, 0, pkg_errors.WithMessagef(err, "get item name cell at row %d", row)
+			}
+			row += 1
+			if itemName == "" {
+				break
+			}
+		}
+		return nil, row, nil
+	}
 
 	enumType, err := getSheetValue(sheet, row, gexcels.EnumColType, true)
 	if err != nil {
