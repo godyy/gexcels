@@ -2,7 +2,7 @@
 
 本仓库是一个 Go 编写的 Excel 配置表解析与代码/数据导出工具：
 - 解析：读取 `.xlsx`，抽取枚举、结构体与普通/全局配置表，做类型/规则校验，并在表间做 LINK 关联检查。
-- 导出：基于解析结果导出 Go 代码，以及 JSON/Bytes/BSON 数据。
+- 导出：基于解析结果导出 Go/C# 代码，以及 JSON/Bytes/BSON 数据。
 
 ## 目录与入口
 
@@ -11,7 +11,7 @@
   - `cmd/Makefile`：交叉编译示例。
 - `parse/`：解析核心逻辑（强依赖解析顺序：Enum -> Struct -> Table）。
 - `export/`
-  - `export/code/`：导出代码（目前只有 Go）。
+  - `export/code/`：导出代码（Go / C#）。
   - `export/data/`：导出数据（json/bytes/bson）。
 - 根目录（`package gexcels`）：领域模型与常量（字段类型、规则、表头布局等）。
 - `internal/test/excels/`：测试用样例 xlsx。
@@ -26,6 +26,19 @@ Go 版本与依赖见 `go.mod`（Go `1.24`；xlsx 解析使用 `github.com/teale
   - `go build ./cmd`
 - 交叉编译（在 `cmd/` 目录执行）：
   - `make build` 或 `make all`
+
+## 代码导出约定
+
+- `export.CodeKind` 现支持 `go`、`csharp`，并兼容 `c#`、`cs` 两个别名。
+- CLI 入口在 `cmd/cmd.go`：
+  - Go 导出：`-code-kind go -go-package <pkg>`
+  - C# 导出：`-code-kind csharp -csharp-namespace <namespace> [-csharp-tables-class Tables]`
+- `-csharp-namespace` 是必填项；`-csharp-tables-class` 默认为 `Tables`，并且类名必须满足 `gexcels.MatchName`。
+- 新增代码导出类型时，至少需要同步修改：
+  - `export/code_kind.go`：注册 kind 与字符串映射
+  - `export/code/export.go`：注册导出器构造函数
+  - `cmd/cmd.go`：补充 CLI 参数校验与分发
+  - `export/code/export_test.go`：补充对应导出回归测试
 
 ## Excel 约定（非常关键）
 
@@ -161,8 +174,40 @@ LINK 用于做跨表值校验：源字段（或其嵌套容器中的叶子 primi
 
 CLI 主流程（`cmd/cmd.go`）：
 - `parse.Parse(excelDir, &parse.Options{...})`
-- 导出代码：`export/code.ExportGo(...)`
+- 导出代码：`export/code.ExportGo(...)` 或 `export/code.ExportCSharp(...)`
 - 导出数据：`export/data.ExportJson|ExportBytes|ExportBson(...)`
+
+### C# 代码导出
+
+C# 导出核心位于 `export/code/csharp.go` 与 `export/code/csharp_template.go`：
+- 支持三种数据格式：`json`、`bytes`、`bson`。
+- 导出顺序与 Go 版一致：枚举 -> 结构体 -> 各配置表 -> `Tables` 静态管理类 -> `LoadHelper`。
+- 生成文件组织：
+  - `<namespace>_enums.cs`
+  - `<namespace>_structs.cs`
+  - 每张表一个 `<table>.cs`
+  - `<namespace>_tables.cs`
+  - `<namespace>_load_helper.cs`
+- 命名规则：
+  - 普通表会生成 “entry 类 + table 类”，table 类名为 `<TableName>Table`
+  - `Tables` 静态管理类名来自 `CSharpOptions.TablesClassName`
+  - 普通字段/属性名转为 CamelCase，`ID` 特殊映射为 `Id`
+- 类型映射关键点：
+  - `int32` 枚举导出为原生 C# `enum`
+  - `string` 枚举退化为 `static class + const string`
+  - 数组导出为 `List<T>`，map 导出为 `Dictionary<TKey, TValue>`
+- 运行时加载关键点：
+  - 普通表会构建 `UNIQUE` / `CKEY` / `GROUP` 对应的查询索引
+  - `Tables` 通过 `Volatile.Read` / `Interlocked.Exchange` 发布最新表实例
+  - 对外暴露全量重载 `LoadAsync(...)` 和按调用顺序局部重载 `LoadTableAsync(...)`
+  - 支持外部注册 `RegisterAfterLoadFunc(tableName, func, priority)`，不会为单表自动生成 after-load hook
+
+### Go 代码导出
+
+Go 导出模板位于 `export/code/go_template.go`：
+- 生成的加载代码现在会导出公共类型 `AfterLoadFunc` 和公共函数 `RegisterAfterLoadFunc(tableName, f, priority)`。
+- 外部调用方可以在加载前注册表级“加载后处理函数”；同一张表只允许注册一次，重复注册会 `panic`。
+- after-load 回调按 `priority` 升序执行；执行失败时会通过 `pkg/errors.WithMessagef` 补充 `table[...] after load` 上下文。
 
 JSON 导出要点（`export/data/json.go`）：
 - 普通表导出为 JSON 数组；每条 entry 的 `ID` 字段输出为 `id`（见 `export.TableFieldIDJsonName`）。
