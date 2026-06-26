@@ -226,27 +226,3 @@ func (p *Parser) parseMapFieldValue(fd *gexcels.Field, s string) (any, error) {
 	}
 	return p.convertFieldJSONValue(fd.FieldTypeInfo, raw, fd.Name)
 }
-
-// getNestedField 获取嵌套的字段
-func (p *Parser) getNestedField(fd *gexcels.Field, fieldPath []string, depth int) *gexcels.Field {
-	if depth >= len(fieldPath) {
-		return fd
-	}
-
-	if fd.Type == gexcels.FTStruct || (fd.Type == gexcels.FTArray && fd.GetElementType().Type == gexcels.FTStruct) {
-		structName := ""
-		if fd.Type == gexcels.FTStruct {
-			structName = fd.GetName()
-		} else {
-			structName = fd.GetElementType().GetName()
-		}
-		sd := p.GetStructByName(structName)
-		nestedFd := sd.GetFieldByName(fieldPath[depth])
-		if nestedFd == nil {
-			return nil
-		}
-		return p.getNestedField(nestedFd, fieldPath, depth+1)
-	}
-
-	return nil
-}

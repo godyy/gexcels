@@ -2,8 +2,6 @@ package gexcels
 
 import (
 	"errors"
-	"reflect"
-	"strconv"
 	"strings"
 )
 
@@ -133,24 +131,4 @@ func (t *Table) HasField(name string) bool {
 // GetFieldID 获取ID字段
 func (t *Table) GetFieldID() *TableField {
 	return t.Fields[TableColFieldID]
-}
-
-// convertUniqueValue2String 将唯一值转换为字符串
-func convertUniqueValue2String(v any) string {
-	switch o := v.(type) {
-	case string:
-		return o
-	case int32:
-		return strconv.FormatInt(int64(o), 10)
-	case int64:
-		return strconv.FormatInt(o, 10)
-	case float32:
-		return strconv.FormatFloat(float64(o), 'f', -1, 32)
-	case float64:
-		return strconv.FormatFloat(o, 'f', -1, 32)
-	case bool:
-		return strconv.FormatBool(o)
-	default:
-		panic("gexcels: invalid unique value type " + reflect.TypeOf(v).String())
-	}
 }
