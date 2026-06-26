@@ -55,7 +55,7 @@ Sheet 名通过正则分类（关键点是以 `|` 分隔“描述”和“类型
 
 ### Tag 过滤
 
-解析器支持 tag 过滤（用于字段/结构体定义行过滤）：
+解析器支持 tag 过滤（用于枚举/字段/结构体定义行过滤）：
 - CLI：`-tag "c/s"`，以 `/` 分隔多个 tag。
 - `parse.Options.Tags` 为空时默认只匹配空 tag。
 - 若包含 `*`（`gexcels.TagAny`），则匹配任意 tag（包括空）。
@@ -64,11 +64,13 @@ Sheet 名通过正则分类（关键点是以 `|` 分隔“描述”和“类型
 ### 枚举表布局
 
 枚举解析位于 `parse/enum.go`，基础列定义在 `gexcels/enum.go`：
-- 起始行：当第 0 列出现 `Name_BEGIN`（`([a-zA-Z][a-zA-Z0-9_]*)_BEGIN`）时开始一个枚举定义。
+- 从第 1 行开始逐行解析（第 0 行通常是表头；见 `gexcels.EnumRowFirstEntry`）。
+- 起始行：当第 1 列出现 `Name_BEGIN`（`([a-zA-Z][a-zA-Z0-9_]*)_BEGIN`）时开始一个枚举定义。
 - 列：
-  - 0：BEGIN / ItemName
-  - 1：Type / ItemValue
-  - 2：Desc
+  - 0：Tag（枚举定义的 tag；不匹配则跳过该枚举整段定义）
+  - 1：BEGIN / ItemName
+  - 2：Type / ItemValue
+  - 3：Desc
 - 枚举类型：只允许 `int32` 或 `string`（见 `gexcels.CheckEnumType`）。
 
 ### 结构体表布局
@@ -116,7 +118,7 @@ Sheet 名通过正则分类（关键点是以 `|` 分隔“描述”和“类型
 2. `parseEnums()`：先解析枚举，并注册为自定义字段类型（供后续字段类型解析使用）。
 3. `parseStructs()`：再解析结构体，并注册为自定义字段类型。
 4. `parseTables()`：最后解析普通/全局表（字段类型会引用 enum/struct）。
-5. `checkLinksBetweenTable()`：对 `LINK`（包括结构体嵌套路径上的 LINK）做跨表值校验。
+5. `checkLinksBetweenTable()`：对 `LINK`（包括结构体嵌套字段上的 LINK）做跨表值校验。
 
 注意：字段类型解析在 `parse/field.go` 的 `parseFieldTypeInfo()`，遇到非 primitive 类型会去查已注册的“自定义字段类型”（枚举/结构体）。因此顺序错误会导致 “custom field type not found”。
 
@@ -124,11 +126,36 @@ Sheet 名通过正则分类（关键点是以 `|` 分隔“描述”和“类型
 
 规则解析定义在 `gexcels/field_rule.go`，主要规则：
 - `UNIQUE`
-- `LINK=Table.Field`
+- `LINK=...`
 - `CKEY=KeyName,Index`（组合键）
 - `GROUP=GroupName,Index`（分组）
 
-配置表中同一字段可通过 `|`（可配置）写多个规则；结构体规则目前仅支持 `LINK`（格式：`LocalField,DstTable.DstField`，见 `parse/struct.go`）。
+配置表中同一字段可通过 `|`（可配置）写多个规则；结构体规则目前仅支持 `LINK`（格式见下文；实现见 `parse/struct.go`）。
+
+### LINK 规则（支持嵌套/多维数组/map key 分层）
+
+LINK 用于做跨表值校验：源字段（或其嵌套容器中的叶子 primitive/enum）必须能在目标表目标字段中找到匹配值。
+
+**表字段 LINK（普通表/全局表字段规则中使用）**
+- 格式：`LINK=[DstTable.DstField][,k1:KeyTable1.KeyField][,k2:KeyTable2.KeyField]...`
+- 示例（仅 value link）：`LINK=Item.ID`
+- 示例（仅 key link）：`LINK=k1:Key1.ID,k2:Key2.ID`
+- 示例（混合）：`LINK=Item.ID,k1:Key1.ID,k2:Key2.ID`
+
+说明：
+- value link 会沿类型递归取“值叶子”：`array -> elem`、`map -> value`、`enum -> underlying primitive`、`struct -> 必须在结构体字段上定义 LINK`。
+- key link 用 `kN:<Table.Field>` 指定要校验第 N 层 map 的 key（N 从 1 开始）。
+- map 层级编号只与 map 出现顺序有关：数组嵌套不计数。例：`[]map[int32][]map[int32]int32` 里只有两层 map，因此可用 `k1`、`k2`。
+- map key 允许的类型：`int32/int64/string/enum`（enum 会按其底层 primitive 参与校验）。
+
+**结构体字段 LINK（在结构体 Rule 列中使用）**
+- 基本格式：`LINK=<LocalField>,<LinkValue>`
+- 其中 `<LinkValue>` 与表字段 LINK 的 value 完全一致（同一套语法），例如：
+  - `LINK=FooID,Item.ID`
+  - `LINK=MM,k1:Key1.ID,k2:Key2.ID`
+
+重要约束：
+- 结构体类型的 LINK 必须在结构体字段自身声明；不支持在上层表字段通过“路径”指定结构体内部字段的 LINK。
 
 ## 导出行为概览
 
@@ -152,4 +179,3 @@ BSON 导出需要 MongoDB 连接信息（`-mongo-uri`、`-mongo-db`）。
   - 名称合法性通常由 `gexcels.MatchName`（`gexcels.NamePattern`）约束。
 - 修改解析行为时优先补充/更新测试：
   - `parse/parse_test.go` 使用 `internal/test/excels/` 内样例做回归。
-
