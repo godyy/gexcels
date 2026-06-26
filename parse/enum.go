@@ -128,6 +128,10 @@ func (p *Parser) parseEnumSheet(sheet *xlsx.Sheet) error {
 
 // parseEnum 解析枚举.
 func (p *Parser) parseEnum(sheet *xlsx.Sheet, row int) (*Enum, int, error) {
+	if isSheetRowComment(sheet, row) {
+		return nil, row + 1, nil
+	}
+
 	enumBegin, err := getSheetValue(sheet, row, gexcels.EnumColBegin, true)
 	if err != nil {
 		return nil, 0, pkg_errors.WithMessagef(err, "get begin cell")
@@ -182,6 +186,10 @@ func (p *Parser) parseEnum(sheet *xlsx.Sheet, row int) (*Enum, int, error) {
 	enum := newEnum(enumName, enumTypeInfo.Type, enumDesc)
 	row += 1
 	for row < sheet.MaxRow {
+		if isSheetRowComment(sheet, row) {
+			row++
+			continue
+		}
 		itemName, err := getSheetValue(sheet, row, gexcels.EnumColItemName, true)
 		if err != nil {
 			return nil, 0, pkg_errors.WithMessagef(err, "get [%d] item name cell", enum.ItemAmount())

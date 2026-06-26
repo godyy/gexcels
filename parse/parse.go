@@ -332,5 +332,19 @@ var commentRegexp = regexp.MustCompile(`^#[\s\S]*$`)
 // 是否注释行
 func isRowComment(row *xlsx.Row) bool {
 	value := row.GetCell(0).Value
+	return isValueComment(value)
+}
+
+// isSheetRowComment 是否是注释行
+func isSheetRowComment(sheet *xlsx.Sheet, row int) bool {
+	if row > sheet.MaxRow || sheet.MaxCol < 1 {
+		return false
+	}
+	cell, _ := getSheetValue(sheet, row, 0, true)
+	return isValueComment(cell)
+}
+
+// isValueComment 是否注释值
+func isValueComment(value string) bool {
 	return commentRegexp.MatchString(value)
 }
