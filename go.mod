@@ -3,7 +3,7 @@ module github.com/godyy/gexcels
 go 1.24
 
 require (
-	github.com/godyy/gutils v0.0.0-20250516075358-a65172ae61e9
+	github.com/godyy/gutils v0.0.4
 	github.com/ohler55/ojg v1.28.1
 	github.com/pkg/errors v0.9.1
 	github.com/tealeg/xlsx/v3 v3.3.10
